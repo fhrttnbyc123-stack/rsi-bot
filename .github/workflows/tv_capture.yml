@@ -2,7 +2,7 @@ name: TV Screenshot
 
 on:
   schedule:
-    - cron: '0 * * * *'   # SAATTE 1
+    - cron: '0 * * * *' # her saat başı
   workflow_dispatch:
 
 jobs:
@@ -10,22 +10,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repo indir
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Chromium kur
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Screenshot al
+      - name: Install dependencies
         run: |
-          google-chrome \
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg2
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Take screenshot of TradingView
+        run: |
+          google-chrome-stable \
             --headless \
             --disable-gpu \
-            --window-size=1400,2000 \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --window-size=1400,1600 \
             --screenshot=tv.png \
-            "https://www.tradingview.com/chart"
+            "https://www.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD"
 
-      - name: Dosyayı sakla
+      - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
           name: tv-image
