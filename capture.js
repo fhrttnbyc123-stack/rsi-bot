@@ -1,5 +1,4 @@
 import puppeteer from "puppeteer-core";
-import fs from "fs";
 
 const CHART_URL =
   "https://www.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD";
@@ -8,6 +7,7 @@ const CHART_URL =
   console.log("Chrome başlatılıyor...");
 
   const browser = await puppeteer.launch({
+    executablePath: "/usr/bin/google-chrome",
     headless: "new",
     args: [
       "--no-sandbox",
@@ -30,7 +30,7 @@ const CHART_URL =
   });
 
   console.log("Render bekleniyor...");
-  await page.waitForTimeout(15000); // RSI tablosu için
+  await page.waitForTimeout(15000);
 
   console.log("Ekran görüntüsü alınıyor...");
   await page.screenshot({
@@ -39,6 +39,5 @@ const CHART_URL =
   });
 
   await browser.close();
-
   console.log("OK: Screenshot alındı");
 })();
