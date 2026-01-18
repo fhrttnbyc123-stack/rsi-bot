@@ -1,40 +1,52 @@
-name: TV Screenshot
+name: TradingView Capture
 
 on:
-  schedule:
-    - cron: '0 * * * *' # her saat başı
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"   # saatte 1 çalışır
 
 jobs:
   capture:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Repo checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Chrome
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget gnupg2
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+          sudo apt update
+          sudo apt install -y wget gnupg
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google.list
+          sudo apt update
+          sudo apt install -y google-chrome-stable
 
-      - name: Take screenshot of TradingView
+      - name: Open TradingView and wait
         run: |
           google-chrome-stable \
             --headless \
             --disable-gpu \
             --no-sandbox \
             --disable-dev-shm-usage \
-            --window-size=1400,1600 \
-            --screenshot=tv.png \
-            "https://www.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD"
+            --window-size=1400,2000 \
+            "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD" &
 
-      - name: Upload screenshot
+          sleep 10
+
+      - name: Take Screenshot
+        run: |
+          google-chrome-stable \
+            --headless \
+            --disable-gpu \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --window-size=1400,2000 \
+            --screenshot=tv.png \
+            "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD"
+
+      - name: Upload Screenshot
         uses: actions/upload-artifact@v4
         with:
-          name: tv-image
+          name: tradingview-image
           path: tv.png
