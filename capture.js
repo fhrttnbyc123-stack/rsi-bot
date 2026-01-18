@@ -29,25 +29,28 @@ async function run() {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Tablo ve indikatörlerin yüklenmesi için bekleme
-        await new Promise(r => setTimeout(r, 35000));
+        // Pine Script ve Tablonun oturması için bekleme
+        await new Promise(r => setTimeout(r, 40000));
 
-        // Tabloyu içeren sağ üst bölgeyi fotoğrafla
+        // Teşhis için koordinatları biraz genişlettim
+        const clipArea = { x: 1350, y: 30, width: 550, height: 800 };
+        
         await page.screenshot({
             path: 'tablo.png',
-            clip: { x: 1400, y: 40, width: 520, height: 700 } 
+            clip: clipArea
         });
+
+        // --- TEŞHİS ADIMI: Fotoğrafı Telegram'a gönder ---
+        await bot.sendPhoto(chatId, 'tablo.png', { caption: "Botun şu an okuduğu alan budur." });
+        console.log("Teşhis fotoğrafı Telegram'a gönderildi.");
 
         console.log("OCR Okuma Başladı...");
         const result = await Tesseract.recognize('tablo.png', 'tur');
-        const rawText = result.data.text;
-        const text = rawText.toLowerCase(); // Küçük harfe çevirerek ara
+        const text = result.data.text.toLowerCase();
         
-        console.log("Okunan Ham Metin:", rawText);
+        console.log("Okunan Ham Metin:", result.data.text);
 
         let sinyal = "";
-        
-        // OCR hatalarına karşı esnek kontrol (Kademeli Alış / Kar Satışı)
         if (text.includes("kademeli") && (text.includes("alis") || text.includes("ali"))) {
             sinyal = "🔔 Kademeli Alış Yap";
         } else if (text.includes("kar") && (text.includes("satis") || text.includes("sati"))) {
@@ -60,19 +63,16 @@ async function run() {
                 state = JSON.parse(fs.readFileSync('state.json'));
             }
 
-            // Sinyal değişmişse mesaj at
             if (state.last_signal !== sinyal) {
                 await bot.sendMessage(chatId, `Strateji Güncellendi:\n${sinyal}`);
                 fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
-                console.log("Telegram mesajı gönderildi: ", sinyal);
-            } else {
-                console.log("Sinyal hala aynı, mesaj atılmadı.");
             }
         } else {
-            console.log("Tetikleyici bir sinyal (Alış/Satış) bulunamadı.");
+            console.log("Tetikleyici bir sinyal bulunamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
+        await bot.sendMessage(chatId, "Bot Hata Aldı: " + err.message);
     } finally {
         await browser.close();
     }
