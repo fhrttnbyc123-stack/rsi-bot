@@ -30,38 +30,34 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
-    
-    // 1920x1080 standart ekran boyutu
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Tablonun ve Pine Script'in yüklenmesi için 45 saniye bekle
+        // Tablonun oturması için bekleme süresi
         await new Promise(r => setTimeout(r, 45000));
 
-        // --- AMELİYAT: Tabloyu Yakınlaştır ---
-        // Sayfayı %150 zoom yaparak yazıların daha büyük okunmasını sağlıyoruz
+        // %150 Zoom ile yazıları devleştiriyoruz
         await page.evaluate(() => {
             document.body.style.zoom = "150%";
         });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
 
-        // Görselde gördüğümüz tabloya göre yeni koordinatlar (Zoom sonrası)
-        // x: 1000 civarı tabloyu ortalar
-        const clipArea = { x: 1000, y: 10, width: 850, height: 900 };
+        // --- YENİ KOORDİNATLAR: Sadece Tabloya Odak ---
+        // x: 1300 yaparak soldaki fiyatları eledik
+        // y: 0 yaparak en üstteki ALTIN satırını yakalıyoruz
+        const clipArea = { x: 1300, y: 0, width: 620, height: 950 };
         
         await page.screenshot({
             path: 'tablo.png',
             clip: clipArea
         });
 
-        // Teşhis için yeni (yakınlaşmış) fotoğrafı gönder
-        await bot.sendPhoto(chatId, 'tablo.png', { caption: "YAKIN ÇEKİM: OCR bu alanı okuyor." });
+        await bot.sendPhoto(chatId, 'tablo.png', { caption: "HEDEF BÖLGE: Eğer ALTIN satırı buradaysa işlem tamamdır." });
 
         console.log("OCR Okuma Başladı...");
-        // 'tur+eng' kullanarak Türkçe karakter hatalarını azaltıyoruz
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const rawText = result.data.text;
         const text = rawText.toLowerCase();
@@ -70,13 +66,16 @@ async function run() {
 
         let sinyal = "";
         
-        // Gönderdiğin görseldeki "🔔 Kademeli Alış Yap" yazısını yakalamak için:
-        if ((text.includes("kademeli") || text.includes("kademelı")) && 
-            (text.includes("alis") || text.includes("alıs") || text.includes("alış") || text.includes("ali"))) {
+        // OCR'ın "Kademeli" kelimesini "Kademell" veya "Xademeli" okuma ihtimaline karşı esnek arama
+        const hasKademeli = text.includes("kademel") || text.includes("ademel");
+        const hasAlis = text.includes("alis") || text.includes("alıs") || text.includes("alış") || text.includes("ali");
+        const hasKar = text.includes("kar") || text.includes("aar");
+        const hasSatis = text.includes("satis") || text.includes("satıs") || text.includes("satış") || text.includes("sati");
+
+        if (hasKademeli && hasAlis) {
             sinyal = "🟢 KADEMELİ ALIŞ YAP";
         } 
-        else if (text.includes("kar") && 
-                (text.includes("satis") || text.includes("satıs") || text.includes("satış") || text.includes("sati"))) {
+        else if (hasKar && hasSatis) {
             sinyal = "🔴 KAR SATIŞI YAP";
         }
 
@@ -87,15 +86,13 @@ async function run() {
             }
 
             if (state.last_signal !== sinyal) {
-                // Sinyal değiştiğinde tabloyu da gönder ki kanıt olsun
-                await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 STRATEJİ DEĞİŞTİ!\n\n${sinyal}` });
+                // Sinyali ve kanıt fotoğrafını gönder
+                await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 STRATEJİ TETİKLENDİ!\n\n${sinyal}` });
                 fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
-                console.log("Sinyal gönderildi.");
-            } else {
-                console.log("Sinyal hala aynı, tekrar gönderilmedi.");
+                console.log("Mesaj gönderildi!");
             }
         } else {
-            console.log("Tetikleyici (Alış/Satış) yazısı bulunamadı.");
+            console.log("Sinyal kelimeleri yakalanamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
