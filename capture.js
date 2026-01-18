@@ -20,14 +20,29 @@ const puppeteer = require("puppeteer-core");
     waitUntil: "networkidle2"
   });
 
-  // === EMAIL BUTONUNU BEKLE VE TIKLA ===
-  console.log("E-posta ile giriş butonu bekleniyor...");
-  await page.waitForSelector('button[data-name="email"]', { timeout: 60000 });
-  await page.click('button[data-name="email"]');
+  // === EMAIL GİRİŞ TETİKLEME (ESNEK) ===
+  console.log("Email giriş yolu aranıyor...");
 
-  console.log("Email butonuna tıklandı, iframe bekleniyor...");
+  const emailClicked = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button, div"));
+    const target = buttons.find(el =>
+      el.innerText?.toLowerCase().includes("e-posta") ||
+      el.innerText?.toLowerCase().includes("email")
+    );
+    if (target) {
+      target.click();
+      return true;
+    }
+    return false;
+  });
 
-  // === IFRAME OLUŞSUN ===
+  if (emailClicked) {
+    console.log("Email giriş tetiklendi.");
+  } else {
+    console.log("Email butonu bulunamadı, iframe direkt aranacak.");
+  }
+
+  // === IFRAME BEKLE ===
   await page.waitForSelector("iframe", { timeout: 60000 });
 
   const loginFrame = page.frames().find(f =>
@@ -35,18 +50,16 @@ const puppeteer = require("puppeteer-core");
   );
 
   if (!loginFrame) {
-    throw new Error("Login iframe hala bulunamadı");
+    throw new Error("Login iframe bulunamadı");
   }
 
-  console.log("Iframe bulundu, giriş yapılıyor...");
+  console.log("Login iframe bulundu.");
 
   await loginFrame.waitForSelector('input[type="email"]', { timeout: 60000 });
   await loginFrame.type('input[type="email"]', process.env.TV_EMAIL, { delay: 40 });
   await loginFrame.type('input[type="password"]', process.env.TV_PASSWORD, { delay: 40 });
-
   await loginFrame.click('button[type="submit"]');
 
-  // === GİRİŞ TAMAMLANSIN ===
   await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 120000 });
 
   console.log("Giriş başarılı, chart açılıyor...");
@@ -70,5 +83,5 @@ const puppeteer = require("puppeteer-core");
   });
 
   await browser.close();
-  console.log("BİTTİ — SCREENSHOT ALINDI");
+  console.log("BİTTİ");
 })();
