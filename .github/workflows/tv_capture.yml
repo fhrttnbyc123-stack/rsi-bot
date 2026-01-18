@@ -1,0 +1,32 @@
+name: TV Screenshot
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # SAATTE 1
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repo indir
+        uses: actions/checkout@v4
+
+      - name: Chromium kur
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Screenshot al
+        run: |
+          google-chrome \
+            --headless \
+            --disable-gpu \
+            --window-size=1400,2000 \
+            --screenshot=tv.png \
+            "https://www.tradingview.com/chart"
+
+      - name: Dosyayı sakla
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-image
+          path: tv.png
