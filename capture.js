@@ -36,10 +36,10 @@ async function run() {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Tablonun ve Pine Script'in yüklenmesi için bekleme
+        // Pine Script ve Tablonun tam oturması için bekleme
         await new Promise(r => setTimeout(r, 45000));
 
-        // Yan Paneli Kapat ve Görseli OCR için Hazırla
+        // Yan paneli gizle ve OCR için yüksek kontrast filtresi uygula
         await page.addStyleTag({ 
             content: `
                 [class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
@@ -49,47 +49,58 @@ async function run() {
             ` 
         });
 
+        // %150 Zoom ile yazıları devleştir
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 3000));
 
-        // --- TARİFİNE GÖRE YENİ MİLİMETRİK KOORDİNATLAR ---
-        // x: 1310 -> BIST yazısının soluna daha fazla (yaklaşık 1cm) pay bırakır.
-        // width: 450 -> Sağdaki 2000, 1950 gibi fiyat rakamlarını tamamen kırpar.
+        // --- ALTIN ORAN KOORDİNATLARI ---
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
-        // Telegram'a fotoğrafı atalım (Son kontrol için)
-        await bot.sendPhoto(chatId, 'tablo.png', { caption: "NİHAİ ODAK: Sol paylı, sağ fiyatlarsız." });
-
-        console.log("OCR Okuma Başladı...");
+        console.log("OCR Analizi yapılıyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const text = result.data.text.toLowerCase();
         
-        console.log("Okunan Ham Metin:", result.data.text);
-
-        let sinyal = "";
+        // Sinyal Kelime Kontrolleri (OCR Hatalarına Karşı Esnek)
         const hasKademeli = text.includes("kademel") || text.includes("ademel");
         const hasAlis = text.includes("alis") || text.includes("alıs") || text.includes("alış") || text.includes("ali");
         const hasKar = text.includes("kar") || text.includes("aar");
         const hasSatis = text.includes("satis") || text.includes("satıs") || text.includes("satış") || text.includes("sati");
 
+        let sinyalMesaji = "";
         if (hasKademeli && hasAlis) {
-            sinyal = "🟢 KADEMELİ ALIŞ YAP";
+            sinyalMesaji = "🟢 KADEMELİ ALIŞ YAP";
         } else if (hasKar && hasSatis) {
-            sinyal = "🔴 KAR SATIŞI YAP";
+            sinyalMesaji = "🔴 KAR SATIŞI YAP";
         }
 
-        if (sinyal !== "") {
+        if (sinyalMesaji !== "") {
             let state = { last_signal: "" };
             if (fs.existsSync('state.json')) {
                 state = JSON.parse(fs.readFileSync('state.json'));
             }
 
-            if (state.last_signal !== sinyal) {
-                await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 STRATEJİ GÜNCELLENDİ!\n\n${sinyal}` });
-                fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
+            // Sadece sinyal değiştiğinde bildirim gönder
+            if (state.last_signal !== sinyalMesaji) {
+                const timestamp = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+                const finalCaption = `🚨 **STRATEJİ SİNYALİ** 🚨\n\n` +
+                                     `Durum: ${sinyalMesaji}\n` +
+                                     `Zaman: ${timestamp}\n\n` +
+                                     `_Sinyal tablodan otomatik okundu._`;
+
+                await bot.sendPhoto(chatId, 'tablo.png', { 
+                    caption: finalCaption,
+                    parse_mode: 'Markdown'
+                });
+                
+                fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyalMesaji }));
+                console.log("Yeni sinyal Telegram'a iletildi.");
+            } else {
+                console.log("Sinyal aynı, bildirim gönderilmedi.");
             }
+        } else {
+            console.log("Aktif Alış/Satış sinyali bulunamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
