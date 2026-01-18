@@ -36,26 +36,34 @@ async function run() {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Tablonun oturması için bekleme süresi
+        // Tablonun oturması için bekleme
         await new Promise(r => setTimeout(r, 45000));
 
-        // %150 Zoom ile yazıları devleştiriyoruz
+        // --- KRİTİK MÜDAHALE: Sağ Paneli (Watchlist) Zorla Gizle ---
+        await page.addStyleTag({ 
+            content: `
+                [class*="layout__area--right"], 
+                [class*="widgetbar"], 
+                .button-qwRE8uS0 { display: none !important; }
+            ` 
+        });
+        console.log("Yan panel gizlendi.");
+
+        // Yazıları devleştirmek için Zoom
         await page.evaluate(() => {
             document.body.style.zoom = "150%";
         });
         await new Promise(r => setTimeout(r, 3000));
 
-        // --- YENİ KOORDİNATLAR: Sadece Tabloya Odak ---
-        // x: 1300 yaparak soldaki fiyatları eledik
-        // y: 0 yaparak en üstteki ALTIN satırını yakalıyoruz
-        const clipArea = { x: 1300, y: 0, width: 620, height: 950 };
+        // Panel kapandığı için tablo artık en sağ üstte (x: 1350 civarı idealdir)
+        const clipArea = { x: 1350, y: 0, width: 570, height: 950 };
         
         await page.screenshot({
             path: 'tablo.png',
             clip: clipArea
         });
 
-        await bot.sendPhoto(chatId, 'tablo.png', { caption: "HEDEF BÖLGE: Eğer ALTIN satırı buradaysa işlem tamamdır." });
+        await bot.sendPhoto(chatId, 'tablo.png', { caption: "PANEL KAPATILDI: Tablo artık bu alanda aranıyor." });
 
         console.log("OCR Okuma Başladı...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
@@ -66,7 +74,7 @@ async function run() {
 
         let sinyal = "";
         
-        // OCR'ın "Kademeli" kelimesini "Kademell" veya "Xademeli" okuma ihtimaline karşı esnek arama
+        // Esnek kelime tarama (Türkçe karakter hatalarına karşı)
         const hasKademeli = text.includes("kademel") || text.includes("ademel");
         const hasAlis = text.includes("alis") || text.includes("alıs") || text.includes("alış") || text.includes("ali");
         const hasKar = text.includes("kar") || text.includes("aar");
@@ -86,7 +94,6 @@ async function run() {
             }
 
             if (state.last_signal !== sinyal) {
-                // Sinyali ve kanıt fotoğrafını gönder
                 await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 STRATEJİ TETİKLENDİ!\n\n${sinyal}` });
                 fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
                 console.log("Mesaj gönderildi!");
