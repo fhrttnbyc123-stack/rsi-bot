@@ -6,11 +6,18 @@ const fs = require('fs');
 
 puppeteer.use(StealthPlugin());
 
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
-const chatId = process.env.CHAT_ID;
-const chartUrl = 'https://tr.tradingview.com/chart/We6vJ4le/'; 
-
 async function run() {
+    const token = process.env.TELEGRAM_TOKEN;
+    const chatId = process.env.CHAT_ID;
+
+    if (!token || !chatId) {
+        console.error("HATA: Token veya ID eksik!");
+        process.exit(1);
+    }
+
+    const bot = new TelegramBot(token);
+    const chartUrl = 'https://tr.tradingview.com/chart/We6vJ4le/'; 
+
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080']
@@ -23,38 +30,54 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
+    
+    // 1920x1080 standart ekran boyutu
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Pine Script ve Tablonun oturması için bekleme
-        await new Promise(r => setTimeout(r, 40000));
+        // Tablonun ve Pine Script'in yüklenmesi için 45 saniye bekle
+        await new Promise(r => setTimeout(r, 45000));
 
-        // Teşhis için koordinatları biraz genişlettim
-        const clipArea = { x: 1350, y: 30, width: 550, height: 800 };
+        // --- AMELİYAT: Tabloyu Yakınlaştır ---
+        // Sayfayı %150 zoom yaparak yazıların daha büyük okunmasını sağlıyoruz
+        await page.evaluate(() => {
+            document.body.style.zoom = "150%";
+        });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Görselde gördüğümüz tabloya göre yeni koordinatlar (Zoom sonrası)
+        // x: 1000 civarı tabloyu ortalar
+        const clipArea = { x: 1000, y: 10, width: 850, height: 900 };
         
         await page.screenshot({
             path: 'tablo.png',
             clip: clipArea
         });
 
-        // --- TEŞHİS ADIMI: Fotoğrafı Telegram'a gönder ---
-        await bot.sendPhoto(chatId, 'tablo.png', { caption: "Botun şu an okuduğu alan budur." });
-        console.log("Teşhis fotoğrafı Telegram'a gönderildi.");
+        // Teşhis için yeni (yakınlaşmış) fotoğrafı gönder
+        await bot.sendPhoto(chatId, 'tablo.png', { caption: "YAKIN ÇEKİM: OCR bu alanı okuyor." });
 
         console.log("OCR Okuma Başladı...");
-        const result = await Tesseract.recognize('tablo.png', 'tur');
-        const text = result.data.text.toLowerCase();
+        // 'tur+eng' kullanarak Türkçe karakter hatalarını azaltıyoruz
+        const result = await Tesseract.recognize('tablo.png', 'tur+eng');
+        const rawText = result.data.text;
+        const text = rawText.toLowerCase();
         
-        console.log("Okunan Ham Metin:", result.data.text);
+        console.log("Okunan Ham Metin:", rawText);
 
         let sinyal = "";
-        if (text.includes("kademeli") && (text.includes("alis") || text.includes("ali"))) {
-            sinyal = "🔔 Kademeli Alış Yap";
-        } else if (text.includes("kar") && (text.includes("satis") || text.includes("sati"))) {
-            sinyal = "🔔 Kar Satışı Yap";
+        
+        // Gönderdiğin görseldeki "🔔 Kademeli Alış Yap" yazısını yakalamak için:
+        if ((text.includes("kademeli") || text.includes("kademelı")) && 
+            (text.includes("alis") || text.includes("alıs") || text.includes("alış") || text.includes("ali"))) {
+            sinyal = "🟢 KADEMELİ ALIŞ YAP";
+        } 
+        else if (text.includes("kar") && 
+                (text.includes("satis") || text.includes("satıs") || text.includes("satış") || text.includes("sati"))) {
+            sinyal = "🔴 KAR SATIŞI YAP";
         }
 
         if (sinyal !== "") {
@@ -64,15 +87,18 @@ async function run() {
             }
 
             if (state.last_signal !== sinyal) {
-                await bot.sendMessage(chatId, `Strateji Güncellendi:\n${sinyal}`);
+                // Sinyal değiştiğinde tabloyu da gönder ki kanıt olsun
+                await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 STRATEJİ DEĞİŞTİ!\n\n${sinyal}` });
                 fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
+                console.log("Sinyal gönderildi.");
+            } else {
+                console.log("Sinyal hala aynı, tekrar gönderilmedi.");
             }
         } else {
-            console.log("Tetikleyici bir sinyal bulunamadı.");
+            console.log("Tetikleyici (Alış/Satış) yazısı bulunamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
-        await bot.sendMessage(chatId, "Bot Hata Aldı: " + err.message);
     } finally {
         await browser.close();
     }
