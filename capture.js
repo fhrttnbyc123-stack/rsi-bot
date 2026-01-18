@@ -36,6 +36,7 @@ async function run() {
         console.log("Grafiğe giriş yapılıyor...");
         await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
+        // Tablonun ve Pine Script'in yüklenmesi için bekleme
         await new Promise(r => setTimeout(r, 45000));
 
         // Yan Paneli Kapat ve Görseli OCR için Hazırla
@@ -51,21 +52,21 @@ async function run() {
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 3000));
 
-        // --- MİLİMETRİK REVİZE KOORDİNATLAR ---
-        // x: 1340 -> BIST yazısının soluna yarım santim boşluk bırakır.
-        // width: 480 -> Sinyal yazısının bitiminde keser, sağdaki fiyatları göstermez.
-        const clipArea = { x: 1340, y: 0, width: 480, height: 950 };
+        // --- TARİFİNE GÖRE YENİ MİLİMETRİK KOORDİNATLAR ---
+        // x: 1310 -> BIST yazısının soluna daha fazla (yaklaşık 1cm) pay bırakır.
+        // width: 450 -> Sağdaki 2000, 1950 gibi fiyat rakamlarını tamamen kırpar.
+        const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
-        // Görsel kontrol için Telegram'a atalım
-        await bot.sendPhoto(chatId, 'tablo.png', { caption: "YENİ MİLİMETRİK ODAK: Fiyatlar gitmiş olmalı." });
+        // Telegram'a fotoğrafı atalım (Son kontrol için)
+        await bot.sendPhoto(chatId, 'tablo.png', { caption: "NİHAİ ODAK: Sol paylı, sağ fiyatlarsız." });
 
         console.log("OCR Okuma Başladı...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const text = result.data.text.toLowerCase();
         
-        console.log("Okunan Metin:", result.data.text);
+        console.log("Okunan Ham Metin:", result.data.text);
 
         let sinyal = "";
         const hasKademeli = text.includes("kademel") || text.includes("ademel");
