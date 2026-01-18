@@ -20,22 +20,38 @@ const puppeteer = require("puppeteer-core");
     waitUntil: "networkidle2"
   });
 
-  await page.waitForSelector('input[name="username"]');
-  await page.type('input[name="username"]', process.env.TV_EMAIL, { delay: 50 });
-  await page.type('input[name="password"]', process.env.TV_PASSWORD, { delay: 50 });
+  // === IFRAME BEKLE ===
+  console.log("Login iframe bekleniyor...");
+  await page.waitForSelector("iframe", { timeout: 60000 });
 
-  await page.click('button[type="submit"]');
+  const frames = page.frames();
+  const loginFrame = frames.find(f =>
+    f.url().includes("accounts.tradingview.com")
+  );
 
-  console.log("Giriş yapılıyor...");
-  await page.waitForNavigation({ waitUntil: "networkidle2" });
+  if (!loginFrame) {
+    throw new Error("Login iframe bulunamadı");
+  }
 
-  console.log("Chart açılıyor...");
+  console.log("Iframe bulundu, giriş yapılıyor...");
+
+  await loginFrame.waitForSelector('input[type="email"]', { timeout: 60000 });
+  await loginFrame.type('input[type="email"]', process.env.TV_EMAIL, { delay: 50 });
+  await loginFrame.type('input[type="password"]', process.env.TV_PASSWORD, { delay: 50 });
+
+  await loginFrame.click('button[type="submit"]');
+
+  // === LOGIN TAMAMLANMASINI BEKLE ===
+  await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 120000 });
+
+  console.log("Giriş başarılı, chart açılıyor...");
+
   await page.goto(
     "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD",
     { waitUntil: "networkidle2" }
   );
 
-  console.log("İndikatör tablosu bekleniyor...");
+  console.log("RSI tablosu bekleniyor...");
 
   await page.waitForFunction(() => {
     return document.body.innerText.includes("RSI");
@@ -49,5 +65,5 @@ const puppeteer = require("puppeteer-core");
   });
 
   await browser.close();
-  console.log("Bitti.");
+  console.log("BİTTİ — HER ŞEY OK");
 })();
