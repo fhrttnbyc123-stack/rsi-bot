@@ -1,34 +1,39 @@
 name: TradingView RSI Capture
 
 on:
-  schedule:
-    - cron: "0 * * * *" # Saatte 1
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"   # Saatte 1 çalışır
 
 jobs:
   capture:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Repo checkout
+        uses: actions/checkout@v4
 
-      - name: Install Node
+      - name: Node setup
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: npm install
+      - name: Chrome install
+        run: |
+          sudo apt update
+          sudo apt install -y google-chrome-stable xvfb
 
-      - name: Install Xvfb
-        run: sudo apt-get install -y xvfb
+      - name: Install puppeteer
+        run: npm install puppeteer-core
 
       - name: Run capture
-        run: |
-          xvfb-run --auto-servernum node capture.js
+        env:
+          TV_EMAIL: ${{ secrets.TV_EMAIL }}
+          TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
+        run: xvfb-run --auto-servernum node capture.js
 
       - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
-          name: tv-screenshot
-          path: tv_full.png
+          name: rsi-table
+          path: rsi_table.png
