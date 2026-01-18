@@ -1,5 +1,0 @@
-pytesseract
-opencv-python
-Pillow
-requests
-
