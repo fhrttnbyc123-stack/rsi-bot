@@ -1,87 +1,44 @@
-const puppeteer = require("puppeteer-core");
+import puppeteer from "puppeteer-core";
+import fs from "fs";
+
+const CHART_URL =
+  "https://www.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD";
 
 (async () => {
+  console.log("Chrome başlatılıyor...");
+
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--window-size=1920,3000"
-    ],
-    executablePath: "/usr/bin/google-chrome"
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=1920,1080"
+    ]
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 1920, height: 3000 });
 
-  console.log("TradingView login sayfası açılıyor...");
-  await page.goto("https://www.tradingview.com/accounts/signin/", {
-    waitUntil: "networkidle2"
-  });
-
-  // === EMAIL GİRİŞ TETİKLEME (ESNEK) ===
-  console.log("Email giriş yolu aranıyor...");
-
-  const emailClicked = await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll("button, div"));
-    const target = buttons.find(el =>
-      el.innerText?.toLowerCase().includes("e-posta") ||
-      el.innerText?.toLowerCase().includes("email")
-    );
-    if (target) {
-      target.click();
-      return true;
-    }
-    return false;
-  });
-
-  if (emailClicked) {
-    console.log("Email giriş tetiklendi.");
-  } else {
-    console.log("Email butonu bulunamadı, iframe direkt aranacak.");
-  }
-
-  // === IFRAME BEKLE ===
-  await page.waitForSelector("iframe", { timeout: 60000 });
-
-  const loginFrame = page.frames().find(f =>
-    f.url().includes("accounts.tradingview.com")
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
   );
 
-  if (!loginFrame) {
-    throw new Error("Login iframe bulunamadı");
-  }
+  console.log("Chart açılıyor...");
+  await page.goto(CHART_URL, {
+    waitUntil: "networkidle2",
+    timeout: 60000
+  });
 
-  console.log("Login iframe bulundu.");
+  console.log("Render bekleniyor...");
+  await page.waitForTimeout(15000); // RSI tablosu için
 
-  await loginFrame.waitForSelector('input[type="email"]', { timeout: 60000 });
-  await loginFrame.type('input[type="email"]', process.env.TV_EMAIL, { delay: 40 });
-  await loginFrame.type('input[type="password"]', process.env.TV_PASSWORD, { delay: 40 });
-  await loginFrame.click('button[type="submit"]');
-
-  await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 120000 });
-
-  console.log("Giriş başarılı, chart açılıyor...");
-
-  await page.goto(
-    "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD",
-    { waitUntil: "networkidle2" }
-  );
-
-  console.log("RSI tablosu bekleniyor...");
-
-  await page.waitForFunction(() => {
-    return document.body.innerText.includes("RSI");
-  }, { timeout: 120000 });
-
-  console.log("Tablo bulundu, ekran görüntüsü alınıyor...");
-
+  console.log("Ekran görüntüsü alınıyor...");
   await page.screenshot({
-    path: "rsi_table.png",
-    fullPage: true
+    path: "chart.png",
+    fullPage: false
   });
 
   await browser.close();
-  console.log("BİTTİ");
+
+  console.log("OK: Screenshot alındı");
 })();
