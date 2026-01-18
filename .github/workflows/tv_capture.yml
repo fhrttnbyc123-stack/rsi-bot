@@ -1,52 +1,34 @@
-name: TradingView Capture
+name: TradingView RSI Capture
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"   # saatte 1 çalışır
+    - cron: "0 * * * *" # Saatte 1
+  workflow_dispatch:
 
 jobs:
   capture:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repo checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Chrome
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+
+      - name: Run capture
         run: |
-          sudo apt update
-          sudo apt install -y wget gnupg
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google.list
-          sudo apt update
-          sudo apt install -y google-chrome-stable
+          xvfb-run --auto-servernum node capture.js
 
-      - name: Open TradingView and wait
-        run: |
-          google-chrome-stable \
-            --headless \
-            --disable-gpu \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --window-size=1400,2000 \
-            "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD" &
-
-          sleep 20
-
-      - name: Take Screenshot
-        run: |
-          google-chrome-stable \
-            --headless \
-            --disable-gpu \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --window-size=1400,2000 \
-            --screenshot=tv.png \
-            "https://tr.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD"
-
-      - name: Upload Screenshot
+      - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
-          name: tradingview-image
-          path: tv.png
+          name: tv-screenshot
+          path: tv_full.png
