@@ -20,28 +20,33 @@ const puppeteer = require("puppeteer-core");
     waitUntil: "networkidle2"
   });
 
-  // === IFRAME BEKLE ===
-  console.log("Login iframe bekleniyor...");
+  // === EMAIL BUTONUNU BEKLE VE TIKLA ===
+  console.log("E-posta ile giriş butonu bekleniyor...");
+  await page.waitForSelector('button[data-name="email"]', { timeout: 60000 });
+  await page.click('button[data-name="email"]');
+
+  console.log("Email butonuna tıklandı, iframe bekleniyor...");
+
+  // === IFRAME OLUŞSUN ===
   await page.waitForSelector("iframe", { timeout: 60000 });
 
-  const frames = page.frames();
-  const loginFrame = frames.find(f =>
+  const loginFrame = page.frames().find(f =>
     f.url().includes("accounts.tradingview.com")
   );
 
   if (!loginFrame) {
-    throw new Error("Login iframe bulunamadı");
+    throw new Error("Login iframe hala bulunamadı");
   }
 
   console.log("Iframe bulundu, giriş yapılıyor...");
 
   await loginFrame.waitForSelector('input[type="email"]', { timeout: 60000 });
-  await loginFrame.type('input[type="email"]', process.env.TV_EMAIL, { delay: 50 });
-  await loginFrame.type('input[type="password"]', process.env.TV_PASSWORD, { delay: 50 });
+  await loginFrame.type('input[type="email"]', process.env.TV_EMAIL, { delay: 40 });
+  await loginFrame.type('input[type="password"]', process.env.TV_PASSWORD, { delay: 40 });
 
   await loginFrame.click('button[type="submit"]');
 
-  // === LOGIN TAMAMLANMASINI BEKLE ===
+  // === GİRİŞ TAMAMLANSIN ===
   await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 120000 });
 
   console.log("Giriş başarılı, chart açılıyor...");
@@ -65,5 +70,5 @@ const puppeteer = require("puppeteer-core");
   });
 
   await browser.close();
-  console.log("BİTTİ — HER ŞEY OK");
+  console.log("BİTTİ — SCREENSHOT ALINDI");
 })();
