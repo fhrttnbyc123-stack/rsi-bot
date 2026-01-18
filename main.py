@@ -1,8 +1,9 @@
-from tradingview_ta import TA_Handler, Interval, Exchange
+from tradingview_ta import TA_Handler, Interval
 
 symbols = [
-    ("RSBLCNN", "BIST"),
-    ("NTTR", "BIST"),
+    ("THYAO", "BIST"),
+    ("ASELS", "BIST"),
+    ("SISE", "BIST"),
 ]
 
 for symbol, exchange in symbols:
@@ -17,7 +18,7 @@ for symbol, exchange in symbols:
         analysis = handler.get_analysis()
         rsi = analysis.indicators["RSI"]
 
-        print(f"{symbol} RSI: {rsi}")
+        print(f"{symbol} RSI: {round(rsi,2)}")
 
     except Exception as e:
         print(f"{symbol} hata: {e}")
