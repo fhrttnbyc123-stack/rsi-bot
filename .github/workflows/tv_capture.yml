@@ -36,6 +36,7 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
           SESSION_SIGN: ${{ secrets.SESSION_SIGN }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node capture.js
 
       - name: Sinyal Durumunu Kaydet (State Persistence)
