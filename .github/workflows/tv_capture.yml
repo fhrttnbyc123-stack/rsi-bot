@@ -30,7 +30,7 @@ jobs:
         run: xvfb-run --auto-servernum node capture.js
 
       - name: Upload chart.png as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: chart-screenshot
           path: chart.png
