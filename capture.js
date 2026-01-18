@@ -1,43 +1,72 @@
-import puppeteer from "puppeteer-core";
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const Tesseract = require('tesseract.js');
+const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
 
-const CHART_URL =
-  "https://www.tradingview.com/chart/We6vJ4le/?symbol=FXOPEN:XAUUSD";
+puppeteer.use(StealthPlugin());
 
-(async () => {
-  console.log("Chrome başlatılıyor...");
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
+const chatId = process.env.CHAT_ID;
+// Kendi chart linkini buraya koy (Login gerektiren asıl link)
+const chartUrl = 'https://tr.tradingview.com/chart/We6vJ4le/'; 
 
-  const browser = await puppeteer.launch({
-    executablePath: "/usr/bin/google-chrome",
-    headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1920,1080"
-    ]
-  });
+async function run() {
+    const browser = await puppeteer.launch({
+        executablePath: '/usr/bin/google-chrome',
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
 
-  const page = await browser.newPage();
+    const page = await browser.newPage();
+    
+    // ADIM: Çerezleri Enjekte Et (Login aşamasını atlar)
+    const cookies = [
+        { name: 'sessionid', value: process.env.SESSION_ID, domain: '.tradingview.com' },
+        { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
+    ];
+    await page.setCookie(...cookies);
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-  );
+    await page.setViewport({ width: 1920, height: 1080 });
 
-  console.log("Chart açılıyor...");
-  await page.goto(CHART_URL, {
-    waitUntil: "networkidle2",
-    timeout: 60000
-  });
+    try {
+        console.log("Grafiğe giriş yapılıyor...");
+        await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        // Tablonun ve Pine Script'in render olması için 30 saniye bekle
+        await new Promise(r => setTimeout(r, 30000));
 
-  console.log("Render bekleniyor...");
-  await page.waitForTimeout(15000);
+        // Tablonun olduğu sağ üst bölgeyi çek
+        await page.screenshot({
+            path: 'tablo.png',
+            clip: { x: 1450, y: 50, width: 450, height: 500 } 
+        });
 
-  console.log("Ekran görüntüsü alınıyor...");
-  await page.screenshot({
-    path: "chart.png",
-    fullPage: false
-  });
+        console.log("OCR Okuma Başladı...");
+        const result = await Tesseract.recognize('tablo.png', 'tur');
+        const text = result.data.text;
+        console.log("Okunan Metin:", text);
 
-  await browser.close();
-  console.log("OK: Screenshot alındı");
-})();
+        let sinyal = "";
+        // Senin Pine Script'indeki tam kelimeleri buraya yaz
+        if (text.includes("Kademeli Alis")) sinyal = "🔔 Kademeli Alış Yap";
+        if (text.includes("Kar Satisi")) sinyal = "🔔 Kar Satışı Yap";
+
+        if (sinyal !== "") {
+            let state = { last_signal: "" };
+            if (fs.existsSync('state.json')) {
+                state = JSON.parse(fs.readFileSync('state.json'));
+            }
+
+            if (state.last_signal !== sinyal) {
+                await bot.sendMessage(chatId, sinyal);
+                fs.writeFileSync('state.json', JSON.stringify({ last_signal: sinyal }));
+                console.log("Sinyal gönderildi.");
+            }
+        }
+    } catch (err) {
+        console.error("Hata oluştu:", err.message);
+    } finally {
+        await browser.close();
+    }
+}
+run();
