@@ -1,8 +1,13 @@
 {
-  "type": "module",
   "name": "rsi-bot",
   "version": "1.0.0",
+  "description": "TradingView OCR Bot",
+  "main": "capture.js",
   "dependencies": {
-    "puppeteer-core": "^21.7.0"
+    "puppeteer-core": "^21.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "tesseract.js": "^4.1.1",
+    "node-telegram-bot-api": "^0.61.0"
   }
 }
