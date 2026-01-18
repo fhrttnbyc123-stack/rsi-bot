@@ -1,30 +1,5 @@
-name: RSI Capture
-
-on:
-  schedule:
-    - cron: "0 * * * *"   # saatte 1
-  workflow_dispatch:
-
-jobs:
-  capture:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Repo checkout
-        uses: actions/checkout@v4
-
-      - name: Node kurulumu
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Chrome kurulumu
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable xvfb
-
-      - name: Paketleri kur
-        run: npm install
-
-      - name: Capture çalıştır
-        run: xvfb-run --auto-servernum node capture.js
+- name: Upload chart.png as artifact
+  uses: actions/upload-artifact@v3
+  with:
+    name: chart-screenshot
+    path: chart.png
