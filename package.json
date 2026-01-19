@@ -1,7 +1,7 @@
 {
   "name": "rsi-bot",
-  "version": "1.0.0",
-  "description": "TradingView OCR Bot",
+  "version": "1.1.0",
+  "description": "TradingView OCR Bot with Daily Reports",
   "main": "capture.js",
   "dependencies": {
     "puppeteer-core": "^21.0.0",
