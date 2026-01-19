@@ -12,7 +12,6 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // URL sonuna zaman ekleyerek TV sunucularını taze veriye zorluyoruz
     const chartUrl = `https://tr.tradingview.com/chart/We6vJ4le/?t=${Date.now()}`; 
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
@@ -20,14 +19,19 @@ async function run() {
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--window-size=1920,1080'
+        ]
     });
 
     const context = await browser.createIncognitoBrowserContext();
     const page = await context.newPage();
     
-    await page.setCacheEnabled(false);
-    await page.setDefaultNavigationTimeout(180000); 
+    // 1. ÖNLEM: networkidle0 yerine 'load' kullanarak takılmayı önle
+    await page.setDefaultNavigationTimeout(150000); 
     
     const cookies = [
         { name: 'sessionid', value: process.env.SESSION_ID, domain: '.tradingview.com' },
@@ -37,15 +41,15 @@ async function run() {
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-        console.log("Grafiğe giriş yapılıyor (Canlı Veri Modu)...");
+        console.log("Grafiğe giriş yapılıyor...");
         
-        // 'networkidle0' kullanarak tüm veri akışı bitene kadar beklemesini sağlıyoruz
-        await page.goto(chartUrl, { waitUntil: 'networkidle0', timeout: 180000 });
+        // 'load' stratejisi canlı veri akışından etkilenmez
+        await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
-        // Pine Script tablolarının hesaplanması zaman alır, 1 dakika sabırla bekliyoruz
-        await new Promise(r => setTimeout(r, 70000)); 
+        // 2. ÖNLEM: Sayfa yüklendikten sonra tablonun render olması için manuel bekleme
+        console.log("Tablonun oluşması bekleniyor (90 saniye)...");
+        await new Promise(r => setTimeout(r, 90000)); 
 
-        // Sağ paneli temizle
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
                       .pane-legend, [class*="table"] { filter: grayscale(100%) contrast(200%) brightness(150%) !important; }`
@@ -54,7 +58,6 @@ async function run() {
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // Koordinatları dünkü "Altın Oran" ayarına sadık kalarak alıyoruz
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
@@ -72,32 +75,38 @@ async function run() {
             let lowerLine = line.toLowerCase();
             if ((lowerLine.includes("kademel") || lowerLine.includes("ademel")) && 
                 (lowerLine.includes("alis") || lowerLine.includes("alıs") || lowerLine.includes("alış"))) {
-                let symbol = line.split(' ')[1] || "Sembol";
+                let words = line.trim().split(/\s+/);
+                let symbol = words[1] || words[0] || "Sembol";
                 currentSignals.push(`🟢 ${symbol}: KADEMELİ ALIŞ`);
             } else if (lowerLine.includes("kar") && 
                        (lowerLine.includes("satis") || lowerLine.includes("satıs") || lowerLine.includes("satış"))) {
-                let symbol = line.split(' ')[1] || "Sembol";
+                let words = line.trim().split(/\s+/);
+                let symbol = words[1] || words[0] || "Sembol";
                 currentSignals.push(`🔴 ${symbol}: KAR SATIŞI`);
             }
         }
 
         const signalText = currentSignals.join('\n');
-        if (signalText !== "") {
+        if (signalText !== "" || isManualRun) {
             let state = { last_all_signals: "" };
             if (fs.existsSync('state.json')) { state = JSON.parse(fs.readFileSync('state.json')); }
 
             if (state.last_all_signals !== signalText || isManualRun) {
-                if (!isManualRun && !isDailyReportTime) {
-                    await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 **SİNYAL DEĞİŞTİ**\n\n${signalText}`, parse_mode: 'Markdown' });
-                } else if (isManualRun) {
-                    await bot.sendMessage(chatId, `📊 **Sinyal Detayları:**\n\n${signalText}`);
+                if (!isManualRun && !isDailyReportTime && signalText !== "") {
+                    await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 **DEĞİŞİKLİK**\n\n${signalText}`, parse_mode: 'Markdown' });
+                } else if (isManualRun && signalText === "") {
+                    await bot.sendMessage(chatId, "📊 Mevcut tabloda aktif bir Alış/Satış sinyali okunamadı.");
+                } else if (signalText !== "") {
+                    await bot.sendMessage(chatId, `📊 **Güncel Sinyaller:**\n\n${signalText}`);
                 }
                 fs.writeFileSync('state.json', JSON.stringify({ last_all_signals: signalText }));
             }
         }
     } catch (err) {
         console.error("Hata:", err.message);
-        await bot.sendMessage(chatId, "❌ HATA: Sayfa yüklenemedi. Grafik 'Kaydet' yapıldı mı?");
+        // Hata durumunda ne olduğunu anlamak için tam ekran görüntüsü al ve gönder
+        await page.screenshot({ path: 'error.png', fullPage: true });
+        await bot.sendPhoto(chatId, 'error.png', { caption: "❌ Yükleme Hatası: " + err.message });
     } finally {
         await browser.close();
     }
