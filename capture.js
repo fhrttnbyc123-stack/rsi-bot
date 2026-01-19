@@ -14,7 +14,6 @@ async function run() {
     const bot = new TelegramBot(token);
     const chartUrl = 'https://tr.tradingview.com/chart/We6vJ4le/'; 
 
-    // Türkiye Saati Hesapla
     const now = new Date();
     const trHour = (now.getUTCHours() + 3) % 24;
     const isDailyReportTime = (trHour === 18);
@@ -26,6 +25,10 @@ async function run() {
     });
 
     const page = await browser.newPage();
+    
+    // ZAMAN AŞIMI AYARI: 30 saniye sınırını 120 saniyeye çıkarıyoruz
+    await page.setDefaultNavigationTimeout(120000); 
+    
     const cookies = [
         { name: 'sessionid', value: process.env.SESSION_ID, domain: '.tradingview.com' },
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
@@ -35,23 +38,21 @@ async function run() {
 
     try {
         console.log("Grafiğe giriş yapılıyor...");
-        // Sayfayı önbelleği yok sayarak (cache-busting) yükle
-        await page.goto(chartUrl, { waitUntil: 'networkidle2', timeout: 90000 });
-        await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+        // 'domcontentloaded' kullanarak sayfanın ana iskeleti kurulur kurulmaz içeri dalıyoruz
+        await page.goto(chartUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
         
-        await new Promise(r => setTimeout(r, 45000));
+        // Pine Script ve tablonun gelmesi için uzun bekleme süresi
+        await new Promise(r => setTimeout(r, 60000)); 
 
-        // OTURUM KONTROLÜ: Eğer giriş yapılmamışsa sağ üstteki profil ikonu çıkmaz
         const isLoggedIn = await page.evaluate(() => {
-            return document.body.innerHTML.includes('header-user-menu') || !document.body.innerHTML.includes('Giriş yap');
+            return !document.body.innerHTML.includes('Giriş yap');
         });
 
         if (!isLoggedIn) {
-            await bot.sendMessage(chatId, "⚠️ UYARI: TradingView Oturumu Kapanmış! Lütfen SESSION_ID çerezlerini yenileyin.");
+            await bot.sendMessage(chatId, "⚠️ UYARI: TradingView Oturumu Kapanmış veya Sayfa Yüklenemedi!");
             return;
         }
 
-        // Yan Paneli Kapat ve Görseli Filtrele
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
                       .pane-legend, [class*="table"] { filter: grayscale(100%) contrast(200%) brightness(150%) !important; }`
@@ -60,27 +61,22 @@ async function run() {
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // ALTIN ORAN KOORDİNATLARIN (Son belirlediğimiz)
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
-        // MANUEL veya SAAT 18:00 ise FOTOĞRAF GÖNDER
         if (isManualRun || isDailyReportTime) {
-            const caption = isManualRun ? "🔄 Manuel Kontrol Raporu" : "🕒 Günlük Saat 18.00 Özeti";
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: caption });
-            console.log("Bilgilendirme fotoğrafı gönderildi.");
+            await bot.sendPhoto(chatId, 'tablo.png', { caption: isManualRun ? "🔄 Manuel Kontrol" : "🕒 18.00 Özeti" });
         }
 
         console.log("OCR Analizi yapılıyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
-        const rawText = result.data.text;
-        const lines = rawText.split('\n');
+        const lines = result.data.text.split('\n');
         
         let currentSignals = [];
         for (let line of lines) {
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
-            let symbol = words[1] || words[0] || "Bilinmiyor"; // Sembol ismini çekmeye çalışır
+            let symbol = words[1] || words[0] || "Bilinmiyor";
             
             if ((lowerLine.includes("kademel") || lowerLine.includes("ademel")) && 
                 (lowerLine.includes("alis") || lowerLine.includes("alıs") || lowerLine.includes("alış"))) {
@@ -92,34 +88,22 @@ async function run() {
         }
 
         const signalText = currentSignals.join('\n');
-
         if (signalText !== "") {
             let state = { last_all_signals: "" };
-            if (fs.existsSync('state.json')) {
-                state = JSON.parse(fs.readFileSync('state.json'));
-            }
+            if (fs.existsSync('state.json')) { state = JSON.parse(fs.readFileSync('state.json')); }
 
-            // Sadece değişiklik varsa veya manuel ise detaylı mesaj gönder
             if (state.last_all_signals !== signalText || isManualRun) {
-                // Değişiklik mesajı (Fotoğraflı)
                 if (!isManualRun && !isDailyReportTime) {
-                    await bot.sendPhoto(chatId, 'tablo.png', { 
-                        caption: `🚨 **STRATEJİ DEĞİŞİKLİĞİ** 🚨\n\n${signalText}`,
-                        parse_mode: 'Markdown'
-                    });
+                    await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 **DEĞİŞİKLİK**\n\n${signalText}`, parse_mode: 'Markdown' });
                 } else {
-                    // Manuel/Saatlik detay metni
-                    await bot.sendMessage(chatId, `📊 **Güncel Sinyal Detayları:**\n\n${signalText}`);
+                    await bot.sendMessage(chatId, `📊 **Sinyaller:**\n\n${signalText}`);
                 }
-                
                 fs.writeFileSync('state.json', JSON.stringify({ last_all_signals: signalText }));
-                console.log("Sinyaller iletildi.");
             }
-        } else {
-            console.log("Aktif sinyal bulunamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
+        await bot.sendMessage(chatId, "❌ Bot Hatası: " + err.message + "\n(Sayfa çok yavaş yükleniyor olabilir.)");
     } finally {
         await browser.close();
     }
