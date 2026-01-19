@@ -12,21 +12,25 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
 
     const bot = new TelegramBot(token);
-    const chartUrl = 'https://tr.tradingview.com/chart/We6vJ4le/'; 
+    
+    // 1. ÖNLEM: URL sonuna zaman damgası ekleyerek TradingView'i taze veri çekmeye zorla
+    const chartUrl = `https://tr.tradingview.com/chart/We6vJ4le/?t=${Date.now()}`; 
 
-    const now = new Date();
-    const trHour = (now.getUTCHours() + 3) % 24;
-    const isDailyReportTime = (trHour === 18);
     const isManualRun = (eventName === 'workflow_dispatch');
+    const trHour = (new Date().getUTCHours() + 3) % 24;
+    const isDailyReportTime = (trHour === 18);
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080']
     });
 
-    const page = await browser.newPage();
+    // 2. ÖNLEM: Gizli (Incognito) pencere kullanarak dünkü çerez kalıntılarını temizle
+    const context = await browser.createIncognitoBrowserContext();
+    const page = await context.newPage();
     
-    // ZAMAN AŞIMI AYARI: 30 saniye sınırını 120 saniyeye çıkarıyoruz
+    // 3. ÖNLEM: Tarayıcı önbelleğini (cache) tamamen devre dışı bırak
+    await page.setCacheEnabled(false);
     await page.setDefaultNavigationTimeout(120000); 
     
     const cookies = [
@@ -37,22 +41,16 @@ async function run() {
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-        console.log("Grafiğe giriş yapılıyor...");
-        // 'domcontentloaded' kullanarak sayfanın ana iskeleti kurulur kurulmaz içeri dalıyoruz
+        console.log("Grafiğe giriş yapılıyor (Taze veri zorlanıyor)...");
         await page.goto(chartUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
         
-        // Pine Script ve tablonun gelmesi için uzun bekleme süresi
-        await new Promise(r => setTimeout(r, 60000)); 
+        // 4. ÖNLEM: Sayfayı bir kez de "Hard Reload" ile zorla yenile
+        await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+        
+        // Tablonun ve canlı verilerin akması için bekleme süresi
+        await new Promise(r => setTimeout(r, 55000)); 
 
-        const isLoggedIn = await page.evaluate(() => {
-            return !document.body.innerHTML.includes('Giriş yap');
-        });
-
-        if (!isLoggedIn) {
-            await bot.sendMessage(chatId, "⚠️ UYARI: TradingView Oturumu Kapanmış veya Sayfa Yüklenemedi!");
-            return;
-        }
-
+        // Yan paneli sil ve görsel filtreyi uygula
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
                       .pane-legend, [class*="table"] { filter: grayscale(100%) contrast(200%) brightness(150%) !important; }`
@@ -65,7 +63,7 @@ async function run() {
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         if (isManualRun || isDailyReportTime) {
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: isManualRun ? "🔄 Manuel Kontrol" : "🕒 18.00 Özeti" });
+            await bot.sendPhoto(chatId, 'tablo.png', { caption: isManualRun ? "🔄 Taze Manuel Kontrol" : "🕒 Güncel 18.00 Özeti" });
         }
 
         console.log("OCR Analizi yapılıyor...");
@@ -76,7 +74,7 @@ async function run() {
         for (let line of lines) {
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
-            let symbol = words[1] || words[0] || "Bilinmiyor";
+            let symbol = words[1] || words[0] || "Sembol";
             
             if ((lowerLine.includes("kademel") || lowerLine.includes("ademel")) && 
                 (lowerLine.includes("alis") || lowerLine.includes("alıs") || lowerLine.includes("alış"))) {
@@ -94,16 +92,18 @@ async function run() {
 
             if (state.last_all_signals !== signalText || isManualRun) {
                 if (!isManualRun && !isDailyReportTime) {
-                    await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 **DEĞİŞİKLİK**\n\n${signalText}`, parse_mode: 'Markdown' });
-                } else {
-                    await bot.sendMessage(chatId, `📊 **Sinyaller:**\n\n${signalText}`);
+                    await bot.sendPhoto(chatId, 'tablo.png', { caption: `🚨 **CANLI DEĞİŞİKLİK**\n\n${signalText}`, parse_mode: 'Markdown' });
+                } else if (signalText !== "") {
+                    await bot.sendMessage(chatId, `📊 **Güncel Sinyaller:**\n\n${signalText}`);
                 }
                 fs.writeFileSync('state.json', JSON.stringify({ last_all_signals: signalText }));
             }
+        } else {
+            console.log("Herhangi bir aktif sinyal okunamadı.");
         }
     } catch (err) {
         console.error("Hata:", err.message);
-        await bot.sendMessage(chatId, "❌ Bot Hatası: " + err.message + "\n(Sayfa çok yavaş yükleniyor olabilir.)");
+        await bot.sendMessage(chatId, "❌ Bot Hatası: " + err.message);
     } finally {
         await browser.close();
     }
