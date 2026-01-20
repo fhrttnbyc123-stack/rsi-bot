@@ -44,9 +44,13 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 90000)); 
 
+        // --- GÖRSEL İYİLEŞTİRME ---
+        // invert(100%): Siyah arka planı beyaza, beyaz yazıları siyaha çevirir (OCR dostu).
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
-                      .pane-legend, [class*="table"] { filter: grayscale(100%) contrast(200%) brightness(150%) !important; }`
+                      .pane-legend, [class*="table"] { 
+                          filter: invert(100%) contrast(200%) !important; 
+                      }`
         });
 
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
@@ -62,20 +66,43 @@ async function run() {
         let activeSignals = [];
         
         for (let line of lines) {
-            let lowerLine = line.toLowerCase();
-            // Sembolü alıyoruz
-            let symbol = line.trim().split(/\s+/)[1] || line.trim().split(/\s+/)[0] || "Sembol";
-            
-            // --- DÜZELTME: Alt çizgileri Telegram için güvenli hale getiriyoruz ---
-            // BIST_DLY -> BIST\_DLY olur, böylece Telegram bunu italik sanmaz.
-            symbol = symbol.replace(/_/g, '\\_'); 
+            // Boş satırları atla
+            if (!line || line.trim().length < 5) continue;
 
-            // 1. DURUM: ALIŞ FIRSATI (Yeşil)
+            let lowerLine = line.toLowerCase();
+            let words = line.trim().split(/\s+/); // Boşluklara göre böl
+            
+            // --- AKILLI SEMBOL BULUCU ---
+            // Genelde semboller ":" içerir (TVC:SX5E, BIST_DLY:XU100)
+            // Veya "1." gibi bir sayıdan sonra gelir.
+            let symbol = "";
+            
+            // Yöntem 1: İçinde ":" geçen kelimeyi bul
+            let colonWord = words.find(w => w.includes(':'));
+            
+            if (colonWord) {
+                symbol = colonWord;
+            } else {
+                // Yöntem 2: Eğer ":" yoksa ve ilk kelime sayı ise (1. SPX) ikinciyi al
+                if (words[0].includes('.') && words.length > 1) {
+                    symbol = words[1];
+                } else {
+                    symbol = words[0]; // Hiçbiri yoksa ilk kelimeyi al
+                }
+            }
+
+            // Temizlik: BIST_DLY -> BIST\_DLY (Markdown hatasını önle)
+            symbol = symbol.replace(/_/g, '\\_');
+            
+            // Eğer sembol çok kısaysa (Hatalı okuma 'Z.' veya '1' gibi), bu satırı atla veya düzelt
+            if (symbol.length < 3) continue; 
+
+            // 1. DURUM: ALIŞ (Yeşil)
             if ((lowerLine.includes("kademel") || lowerLine.includes("ademel")) && 
                 (lowerLine.includes("alis") || lowerLine.includes("alıs") || lowerLine.includes("alış"))) {
                 activeSignals.push(`🟢 ${symbol}: KADEMELİ ALIŞ`);
             } 
-            // 2. DURUM: SATIŞ FIRSATI (Kırmızı)
+            // 2. DURUM: SATIŞ (Kırmızı)
             else if (lowerLine.includes("kar") && 
                     (lowerLine.includes("satis") || lowerLine.includes("satıs") || lowerLine.includes("satış"))) {
                 activeSignals.push(`🔴 ${symbol}: KAR SATIŞI`);
@@ -102,7 +129,6 @@ async function run() {
                     parse_mode: 'Markdown'
                 });
             } else {
-                // Burada parse_mode kullanmıyoruz ki hata riski sıfır olsun
                 await bot.sendMessage(chatId, `ℹ️ Piyasa Duruldu (${timestampText})\nAktif sinyal kalmadı.`);
             }
             fs.writeFileSync('state.json', JSON.stringify({ last_active_signals: signalText }));
@@ -126,7 +152,6 @@ async function run() {
 
     } catch (err) {
         console.error("Hata:", err.message);
-        // Hata mesajını düz metin (plain text) olarak atıyoruz ki hata verirken tekrar hata vermesin
         if (isManualRun) await bot.sendMessage(chatId, "❌ HATA: " + err.message);
     } finally {
         await browser.close();
