@@ -12,11 +12,11 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // Cache-busting URL
+    // Her seferinde benzersiz URL (Önbellek önleyici)
     const chartUrl = `https://tr.tradingview.com/chart/We6vJ4le/?t=${Date.now()}&nosync=true`; 
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
-    const isDailyReportTime = (trHour === 18);
+    const isDailyReportTime = (trHour === 18); // Saat 18'de rapor at
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
@@ -62,11 +62,11 @@ async function run() {
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
-        let activeSignals = []; // Sadece önemli sinyalleri tutacak liste
+        let activeSignals = [];
         
         for (let line of lines) {
             let lowerLine = line.toLowerCase();
-            // Sembolü yakala (Satırın başındaki kelime)
+            // Sembolü yakala
             let symbol = line.trim().split(/\s+/)[1] || line.trim().split(/\s+/)[0] || "Sembol";
 
             // 1. DURUM: ALIŞ FIRSATI (Yeşil)
@@ -79,14 +79,12 @@ async function run() {
                     (lowerLine.includes("satis") || lowerLine.includes("satıs") || lowerLine.includes("satış"))) {
                 activeSignals.push(`🔴 ${symbol}: KAR SATIŞI`);
             }
-            // 3. DURUM: TETİKTE OL (Kırmızı - Hazırlık)
-            else if (lowerLine.includes("tetik") || lowerLine.includes("hazir") || lowerLine.includes("hazır")) {
-                activeSignals.push(`🔴 ${symbol}: TETİKTE OL`);
+            // 3. DURUM: TETİKTE OL (Turuncu) -> Sadece "Tetik" kelimesine bakar
+            else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
+                activeSignals.push(`🟠 ${symbol}: TETİKTE OL`);
             }
-            // NOT: "Dikkatli Olunmalı" bilerek alınmadı (Spam engelleme)
         }
 
-        // Listeyi sırala (Böylece sıralama değişirse yanlış alarm vermez)
         activeSignals.sort();
         const signalText = activeSignals.join('\n');
 
@@ -96,35 +94,35 @@ async function run() {
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
 
-        // SENARYO 1: DURUM DEĞİŞTİ (Önemli!)
+        // SENARYO 1: DURUM DEĞİŞTİ (Acil Haber)
         if (state.last_active_signals !== signalText) {
             if (signalText !== "") {
-                // Yeni sinyaller var
                 await bot.sendPhoto(chatId, 'tablo.png', { 
-                    caption: `🚨 **SİNYAL DEĞİŞTİ** (${timestampText})\n\n${signalText}`,
+                    caption: `🚨 **PİYASA HAREKETLENDİ** (${timestampText})\n\n${signalText}`,
                     parse_mode: 'Markdown'
                 });
             } else {
-                // Liste tamamen boşaldıysa (Herkes nötr/dikkatli moda geçtiyse)
-                await bot.sendMessage(chatId, `ℹ️ **Piyasa Duruldu** (${timestampText})\nAktif Alış/Satış veya Tetik sinyali kalmadı.`);
+                await bot.sendMessage(chatId, `ℹ️ **Piyasa Duruldu** (${timestampText})\nAktif sinyal kalmadı, herkes beklemede.`);
             }
-            // Yeni durumu kaydet
             fs.writeFileSync('state.json', JSON.stringify({ last_active_signals: signalText }));
             console.log("Değişiklik tespit edildi, mesaj atıldı.");
         } 
         
-        // SENARYO 2: GÜNLÜK RAPOR (18:00) veya MANUEL RUN
+        // SENARYO 2: 18.00 RAPORU veya MANUEL (Rutin Haber)
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 Manuel Kontrol" : "🕒 Günlük 18.00 Raporu";
-            const mesaj = signalText ? `${baslik} (${timestampText})\n\n${signalText}` : `${baslik} (${timestampText})\n\nŞu an aktif işlem sinyali yok.`;
+            // Sinyal varsa listele, yoksa "Sakin" yaz
+            const durumMetni = signalText ? signalText : "Şu an aktif işlem sinyali (Alış/Satış/Tetik) yok.";
             
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: mesaj });
+            await bot.sendPhoto(chatId, 'tablo.png', { 
+                caption: `${baslik} (${timestampText})\n\n${durumMetni}`,
+                parse_mode: 'Markdown'
+            });
             console.log("Rutin rapor gönderildi.");
         } 
         
-        // SENARYO 3: DEĞİŞİKLİK YOK
         else {
-            console.log("Sinyaller aynı, saat rutin değil. Mesaj gönderilmiyor.");
+            console.log("Sessizlik modu: Değişiklik yok, saat rutin değil.");
         }
 
     } catch (err) {
