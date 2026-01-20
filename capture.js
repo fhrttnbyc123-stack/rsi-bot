@@ -12,7 +12,6 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // Cache-busting URL
     const chartUrl = `https://tr.tradingview.com/chart/We6vJ4le/?t=${Date.now()}&nosync=true`; 
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
@@ -44,13 +43,9 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 90000)); 
 
-        // --- GÖRSEL İYİLEŞTİRME ---
-        // invert(100%): Siyah arka planı beyaza, beyaz yazıları siyaha çevirir (OCR dostu).
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
-                      .pane-legend, [class*="table"] { 
-                          filter: invert(100%) contrast(200%) !important; 
-                      }`
+                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
@@ -63,92 +58,116 @@ async function run() {
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
-        let activeSignals = [];
+        // --- YENİ MANTIK: Sembol bazlı durum takibi ---
+        let currentSnapshot = {}; // O anki durumu sembol:durum olarak tutacağız
+        let fullReportList = [];  // 18:00 raporu için tüm listeyi tutacağız
         
         for (let line of lines) {
-            // Boş satırları atla
             if (!line || line.trim().length < 5) continue;
-
             let lowerLine = line.toLowerCase();
-            let words = line.trim().split(/\s+/); // Boşluklara göre böl
+            let words = line.trim().split(/\s+/);
             
-            // --- AKILLI SEMBOL BULUCU ---
-            // Genelde semboller ":" içerir (TVC:SX5E, BIST_DLY:XU100)
-            // Veya "1." gibi bir sayıdan sonra gelir.
+            // Sembol bulma (Akıllı yöntem)
             let symbol = "";
-            
-            // Yöntem 1: İçinde ":" geçen kelimeyi bul
             let colonWord = words.find(w => w.includes(':'));
-            
             if (colonWord) {
                 symbol = colonWord;
             } else {
-                // Yöntem 2: Eğer ":" yoksa ve ilk kelime sayı ise (1. SPX) ikinciyi al
-                if (words[0].includes('.') && words.length > 1) {
-                    symbol = words[1];
-                } else {
-                    symbol = words[0]; // Hiçbiri yoksa ilk kelimeyi al
-                }
+                if (words[0].includes('.') && words.length > 1) symbol = words[1];
+                else symbol = words[0];
             }
+            // Markdown hatasını önle
+            let safeSymbol = symbol.replace(/_/g, '\\_'); 
+            // JSON key olarak kullanmak için temiz sembol
+            let rawSymbol = symbol.replace(/\\/g, ''); 
 
-            // Temizlik: BIST_DLY -> BIST\_DLY (Markdown hatasını önle)
-            symbol = symbol.replace(/_/g, '\\_');
-            
-            // Eğer sembol çok kısaysa (Hatalı okuma 'Z.' veya '1' gibi), bu satırı atla veya düzelt
-            if (symbol.length < 3) continue; 
+            if (rawSymbol.length < 3) continue;
 
-            // 1. DURUM: ALIŞ (Yeşil)
+            let status = "NÖTR"; // Varsayılan
+            let emoji = "";
+
             if ((lowerLine.includes("kademel") || lowerLine.includes("ademel")) && 
                 (lowerLine.includes("alis") || lowerLine.includes("alıs") || lowerLine.includes("alış"))) {
-                activeSignals.push(`🟢 ${symbol}: KADEMELİ ALIŞ`);
-            } 
-            // 2. DURUM: SATIŞ (Kırmızı)
-            else if (lowerLine.includes("kar") && 
-                    (lowerLine.includes("satis") || lowerLine.includes("satıs") || lowerLine.includes("satış"))) {
-                activeSignals.push(`🔴 ${symbol}: KAR SATIŞI`);
+                status = "ALIŞ";
+                emoji = "🟢";
+            } else if (lowerLine.includes("kar") && 
+                       (lowerLine.includes("satis") || lowerLine.includes("satıs") || lowerLine.includes("satış"))) {
+                status = "SATIŞ";
+                emoji = "🔴";
+            } else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
+                status = "TETİK";
+                emoji = "🟠";
+            } else if (lowerLine.includes("dikkat")) {
+                status = "DİKKAT";
+                emoji = "🟡";
             }
-            // 3. DURUM: TETİKTE OL (Turuncu)
-            else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
-                activeSignals.push(`🟠 ${symbol}: TETİKTE OL`);
+
+            // Anlık durumu kaydet (Karşılaştırma için)
+            if (status !== "NÖTR") {
+                currentSnapshot[rawSymbol] = status;
+                fullReportList.push(`${emoji} ${safeSymbol}: ${status}`);
             }
         }
 
-        activeSignals.sort();
-        const signalText = activeSignals.join('\n');
+        fullReportList.sort();
+        const fullReportText = fullReportList.join('\n');
 
-        let state = { last_active_signals: "" };
-        if (fs.existsSync('state.json')) { state = JSON.parse(fs.readFileSync('state.json')); }
+        // --- GEÇMİŞ DURUMU YÜKLE ---
+        let lastSnapshot = {};
+        if (fs.existsSync('state.json')) {
+            try {
+                // Eğer dosya eskiyse (string tutuyorsa) patlamasın diye try-catch
+                let content = JSON.parse(fs.readFileSync('state.json'));
+                if (content.snapshot) {
+                    lastSnapshot = content.snapshot;
+                }
+            } catch (e) { console.log("Eski state dosyası sıfırlandı."); }
+        }
+
+        // --- DEĞİŞİKLİK KONTROLÜ (Sadece ALIM/SATIM Bildir) ---
+        let notificationLines = [];
+
+        // Mevcut tablodaki her sembolü kontrol et
+        for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
+            let previousStatus = lastSnapshot[sym] || "NÖTR"; // Eskiden yoksa Nötr kabul et
+
+            // Eğer durum değişmişse VE (Yeni durum ALIŞ veya SATIŞ ise)
+            if (currentStatus !== previousStatus) {
+                if (currentStatus === "ALIŞ") {
+                    notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: KADEMELİ ALIŞ FIRSATI!`);
+                } 
+                else if (currentStatus === "SATIŞ") {
+                    notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR SATIŞI ZAMANI!`);
+                }
+                // NOT: "TETİK", "DİKKAT" veya "NÖTR"e geçişleri bilerek listeye eklemiyoruz.
+            }
+        }
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
 
-        // SENARYO 1: DURUM DEĞİŞTİ
-        if (state.last_active_signals !== signalText) {
-            if (signalText !== "") {
-                await bot.sendPhoto(chatId, 'tablo.png', { 
-                    caption: `🚨 **SİNYAL DEĞİŞTİ** (${timestampText})\n\n${signalText}`,
-                    parse_mode: 'Markdown'
-                });
-            } else {
-                await bot.sendMessage(chatId, `ℹ️ Piyasa Duruldu (${timestampText})\nAktif sinyal kalmadı.`);
-            }
-            fs.writeFileSync('state.json', JSON.stringify({ last_active_signals: signalText }));
-            console.log("Değişiklik tespit edildi, mesaj atıldı.");
-        } 
+        // SENARYO 1: ÖNEMLİ DEĞİŞİKLİK VARSA BİLDİR
+        if (notificationLines.length > 0) {
+            let message = `🚨 **KRİTİK SİNYAL DEĞİŞİMİ** (${timestampText})\n\n` + notificationLines.join('\n');
+            await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
+            console.log("Kritik değişiklik (Alış/Satış) bildirildi.");
+        }
         
-        // SENARYO 2: RUTİN RAPOR
+        // SENARYO 2: 18.00 RAPORU veya MANUEL RUN
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 Manuel Kontrol" : "🕒 Günlük 18.00 Raporu";
-            const durumMetni = signalText ? signalText : "Şu an aktif işlem sinyali yok.";
+            const durumMetni = fullReportText ? fullReportText : "Şu an listede aktif sinyal yok.";
             
             await bot.sendPhoto(chatId, 'tablo.png', { 
                 caption: `${baslik} (${timestampText})\n\n${durumMetni}`,
                 parse_mode: 'Markdown'
             });
             console.log("Rutin rapor gönderildi.");
-        } 
-        else {
-            console.log("Sessizlik modu.");
+        } else {
+            console.log("Kritik bir değişim (Alış/Satış) yok, bildirim gönderilmedi.");
         }
+
+        // --- YENİ DURUMU KAYDET (Her zaman güncelle ki bir sonraki saat referans olsun) ---
+        fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
     } catch (err) {
         console.error("Hata:", err.message);
