@@ -12,7 +12,6 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // SENİN GRAFİK ID'N
     const chartId = 'cZaSxzAT'; 
     
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
@@ -20,15 +19,10 @@ async function run() {
     const trHour = (new Date().getUTCHours() + 3) % 24;
     const isDailyReportTime = (trHour === 18);
 
+    // 1. Zoom yok, doğal 1920x1080 çözünürlük
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080'],
-        // ÖNEMLİ: Görüntüyü 3 kat netleştirir (Zoom yapmadan yazıları okunur kılar)
-        defaultViewport: {
-            width: 1920,
-            height: 1080,
-            deviceScaleFactor: 3 
-        }
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
     });
 
     const context = await browser.createIncognitoBrowserContext();
@@ -40,75 +34,43 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
+    await page.setViewport({ width: 1920, height: 1080 });
 
     try {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
         console.log("Canlı veri...");
-        await page.mouse.click(960, 540); // Ekranın tam ortasına tıkla
+        await page.mouse.click(500, 500); 
         await page.keyboard.press('Space');
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Yan panelleri gizle (Tabloyu rahat görmek için)
+        // 2. GÜVENLİ FİLTRE: Ekranı karartmadan sadece tabloyu netleştirir.
+        // Yan panelleri gizle ve tabloyu "Beyaz kağıt üstüne siyah yazı" moduna al.
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+            content: `
+                [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
+                
+                /* Tablo katmanlarını hedefle, önce beyaz arka plan ver, sonra ters çevir */
+                [class*="table-"], .pane-legend, [data-name="legend"] {
+                    background-color: #ffffff !important;
+                    filter: invert(100%) contrast(250%) brightness(105%) !important;
+                }
+            `
         });
-        
-        // Zoom komutunu kaldırdık! Artık sayfa doğal boyutunda.
+
+        // Zoom komutu YOK. Sayfa doğal boyutunda.
 
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- AKILLI RADAR SİSTEMİ ---
-        // Koordinat sallamak yerine, bot sayfadaki "SEMBOL" yazısını arayıp tabloyu bulacak.
-        console.log("Tablo aranıyor...");
-        
-        const tableClip = await page.evaluate(() => {
-            // Tüm div elementlerini tara
-            const allDivs = Array.from(document.querySelectorAll('div'));
-            
-            // İçinde "SEMBOL" yazan ve ekranda görünür olan en mantıklı kutuyu bul
-            // Pine script tabloları genellikle iç içe div'lerden oluşur.
-            for (const div of allDivs) {
-                // Sadece metni "SEMBOL" olan veya içinde SEMBOL ve RSI geçen kutuyu yakala
-                if (div.innerText && div.innerText.includes('SEMBOL') && div.innerText.includes('RSI')) {
-                    
-                    // Bu kutunun ana çerçevesini bulmaya çalış (Biraz yukarı tırman)
-                    // Genellikle 4-5 satır veri varsa yüksekliği 200px'den büyüktür.
-                    let parent = div;
-                    let found = false;
-                    
-                    // 5 seviye yukarı kadar ebeveynlere bak
-                    for(let i=0; i<6; i++) {
-                        if(parent && parent.offsetHeight > 100 && parent.offsetWidth > 200) {
-                            // Makul boyutlarda bir tablo bulduk
-                            found = true;
-                            break;
-                        }
-                        if(parent.parentElement) parent = parent.parentElement;
-                    }
-
-                    if (found) {
-                        const rect = parent.getBoundingClientRect();
-                        // Koordinatları döndür
-                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                    }
-                }
-            }
-            return null; // Bulamazsa null dön
-        });
-
-        if (tableClip) {
-            console.log(`Tablo bulundu! Koordinatlar: x=${tableClip.x}, y=${tableClip.y}`);
-            // Bulunan tablonun fotoğrafını çek
-            await page.screenshot({ path: 'tablo.png', clip: tableClip });
-        } else {
-            console.log("Otomatik tablo bulunamadı, varsayılan sağ üst köşe çekiliyor...");
-            // Bulamazsa standart sağ üst köşeyi çek (Güvenlik önlemi)
-            // Zoom olmadığı için 1920 ekranın en sağı 1400-1920 arasıdır.
-            await page.screenshot({ path: 'tablo.png', clip: { x: 1350, y: 0, width: 570, height: 1080 } });
-        }
+        // 3. NOKTA ATIŞI KADRAJ (1920x1080 ekran için sağ üst köşe)
+        // x: 1420 -> Soldan yeterince uzak, grafik girmez.
+        // y: 40   -> Üstteki menü çubuğunu atlar.
+        // width: 500 -> Tablo rahatça sığar.
+        // height: 1040 -> Alt kısma kadar iner.
+        const clipArea = { x: 1420, y: 40, width: 500, height: 1040 };
+        await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
@@ -122,9 +84,16 @@ async function run() {
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
             
-            let symbol = words[0]; 
-            if (symbol.includes('.') || symbol.length < 2) {
-                 if(words.length > 1) symbol = words[1];
+            // Sembol yakalama (Daha sağlam mantık)
+            let symbol = words[0];
+            
+            // Eğer ilk kelime "BOLGESINE", "ALIM", "TETIKTE" gibi indikatör kelimesiyse, bu satırı atla (Hatalı okuma)
+            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.includes("tetik") || symbol.length < 2) {
+                continue;
+            }
+            // Eğer "1. XU100" gibi sayı varsa ikinciyi al
+            if (symbol.includes('.') && words.length > 1) {
+                 symbol = words[1];
             }
             
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
