@@ -12,7 +12,7 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // chartId DOĞRU
+    // CHART ID (Senin Yeni Kodun)
     const chartId = 'cZaSxzAT'; 
     
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
@@ -47,22 +47,20 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // SEVDİĞİN RENK FİLTRESİ
+        // RENK FİLTRESİ (Siyah Zemin -> Beyaz Zemin)
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // --- ZOOM AYARI (ARTTIRILDI) ---
-        // %175 yaparak daha yakın çekim alıyoruz.
-        await page.evaluate(() => { document.body.style.zoom = "175%"; });
+        // ZOOM AYARI (%150)
+        await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ DÜZELTME (SAĞA KAYDIRDIK VE GENİŞLETTİK) ---
-        // x: 1150 (Sola kaymayı düzeltmek için sağa çektik)
-        // width: 750 (Zoom artınca tablo büyüdü, sığması için genişlettik)
-        // height: 1080 (Tam boy)
-        const clipArea = { x: 1150, y: 0, width: 750, height: 1080 };
+        // --- KADRAJ DÜZELTME ---
+        // x: 1000 -> Bayağı sola aldım. Siyah ekran çıkmaz, tablo kesin girer.
+        // width: 800 -> Genişliği arttırdım, tabloyu tam kapsar.
+        const clipArea = { x: 1000, y: 0, width: 800, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -137,13 +135,11 @@ async function run() {
         if (notificationLines.length > 0) {
             let message = `🚨 **AL/SAT SİNYALİ** (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
-            console.log("Kritik sinyal gönderildi.");
         }
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 İsteğin Üzerine Kontrol" : "🕒 Günlük 18.00 Özeti";
             const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
-            console.log("Rapor gönderildi.");
         } 
         else {
             console.log("Sessiz mod.");
