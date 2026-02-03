@@ -13,7 +13,7 @@ async function run() {
     const bot = new TelegramBot(token);
     
     // =================================================================
-    // SENİN GRAFİK ID'N (Değiştirme, doğru girmiştin)
+    // BURAYA KENDİ CHART ID'Nİ YAZMAYI UNUTMA!
     const chartId = 'cZaSxzAT'; 
     // =================================================================
 
@@ -43,39 +43,42 @@ async function run() {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
-        console.log("Canlı veri için dürbün ayarı yapılıyor...");
+        console.log("Canlı veri...");
         await page.mouse.click(500, 500); 
         await page.keyboard.press('Space');
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // --- KRİTİK GÜNCELLEME: NETLİK AYARI ---
+        // --- DÜZELTİLEN KISIM ---
+        // Filtreleri kaldırdık (Bozulmayı önlemek için).
+        // Sadece hücrelerin (td) arka planını MAT SİYAH yapıyoruz.
         await page.addStyleTag({ 
             content: `
                 /* Yan panelleri gizle */
                 [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
 
-                /* TABLOYU HEDEFLE: */
-                /* 1. Arka planı ZORLA mat siyah yap (Şeffaflığı kaldır) */
-                /* 2. Sonra renkleri ters çevir (Mat beyaz zemin, siyah yazı olur) */
-                /* 3. Kontrastı kökle */
-                [class*="table"], .pane-legend, [data-name="legend"] {
+                /* Tablo hücrelerini hedefle ve arka planı MAT SİYAH yap */
+                td {
                     background-color: #000000 !important; 
-                    opacity: 1 !important; 
-                    backdrop-filter: none !important;
-                    filter: invert(100%) contrast(250%) brightness(110%) !important; 
-                    box-shadow: none !important;
+                    opacity: 1 !important;
+                    border-bottom: 1px solid #333 !important; /* Satırları ayırmak için ince çizgi */
+                }
+                
+                /* Tablo konteynerini görünür kıl */
+                [class*="table"] {
+                    background-color: #000000 !important;
                 }
             `
         });
 
+        // Zoom ayarı (Aynı kalıyor)
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
-        console.log("Yazılar okunuyor...");
+        console.log("Okunuyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
@@ -98,7 +101,6 @@ async function run() {
             let status = "NÖTR";
             let emoji = "";
 
-            // İndikatör Durumları
             if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
                 status = "ALIŞ"; emoji = "🟢";
             } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
@@ -111,8 +113,6 @@ async function run() {
                 status = "ALIM_BOLGESI"; emoji = "🔵";
             } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
                 status = "ZİRVE"; emoji = "🟣";
-            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
-                 status = "DİPTE"; emoji = "⚪";
             }
 
             if (status !== "NÖTR") {
@@ -144,17 +144,17 @@ async function run() {
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
 
         if (notificationLines.length > 0) {
-            let message = `🚨 **AL/SAT SİNYALİ** (${timestampText})\n\n` + notificationLines.join('\n');
+            let message = `🚨 **SİNYAL DEĞİŞİMİ** (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
             console.log("Kritik sinyal gönderildi.");
         }
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 İsteğin Üzerine Kontrol" : "🕒 Günlük 18.00 Özeti";
-            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal görünmüyor.";
+            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
             console.log("Rapor gönderildi.");
         } else {
-            console.log("Önemli bir değişiklik yok, sessiz mod.");
+            console.log("Sessiz mod.");
         }
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
