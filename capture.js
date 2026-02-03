@@ -12,14 +12,17 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
+    // =================================================================
+    // CHART ID SABİT
     const chartId = 'cZaSxzAT'; 
-    
+    // =================================================================
+
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
+    
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
-    const isDailyReportTime = (trHour === 18);
+    const isDailyReportTime = (trHour === 18); 
 
-    // 1. Zoom yok, doğal 1920x1080 çözünürlük
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
@@ -46,30 +49,23 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // 2. GÜVENLİ FİLTRE: Ekranı karartmadan sadece tabloyu netleştirir.
-        // Yan panelleri gizle ve tabloyu "Beyaz kağıt üstüne siyah yazı" moduna al.
+        // 1. SADECE YAN PANELLERİ GİZLE (Renklerle oynama yok)
         await page.addStyleTag({ 
-            content: `
-                [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
-                
-                /* Tablo katmanlarını hedefle, önce beyaz arka plan ver, sonra ters çevir */
-                [class*="table-"], .pane-legend, [data-name="legend"] {
-                    background-color: #ffffff !important;
-                    filter: invert(100%) contrast(250%) brightness(105%) !important;
-                }
-            `
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
 
-        // Zoom komutu YOK. Sayfa doğal boyutunda.
-
+        // 2. ZOOM AYARI (GERİ GELDİ VE ARTTIRILDI)
+        // %175 yaparak tabloyu "burnumuzun dibine" getiriyoruz.
+        await page.evaluate(() => { document.body.style.zoom = "175%"; });
+        
         await new Promise(r => setTimeout(r, 5000));
 
-        // 3. NOKTA ATIŞI KADRAJ (1920x1080 ekran için sağ üst köşe)
-        // x: 1420 -> Soldan yeterince uzak, grafik girmez.
-        // y: 40   -> Üstteki menü çubuğunu atlar.
-        // width: 500 -> Tablo rahatça sığar.
-        // height: 1040 -> Alt kısma kadar iner.
-        const clipArea = { x: 1420, y: 40, width: 500, height: 1040 };
+        // 3. KADRAJ AYARI (ZOOM'A GÖRE HESAPLANDI)
+        // Zoom yapınca tablo sağa kaçar, o yüzden x değerini ayarladık.
+        // x: 1300 -> Sağ tarafı hedefler.
+        // width: 620 -> Tablonun tamamını alır.
+        // height: 1080 -> Listenin en altını kesmez.
+        const clipArea = { x: 1300, y: 0, width: 620, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -84,18 +80,14 @@ async function run() {
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
             
-            // Sembol yakalama (Daha sağlam mantık)
-            let symbol = words[0];
-            
-            // Eğer ilk kelime "BOLGESINE", "ALIM", "TETIKTE" gibi indikatör kelimesiyse, bu satırı atla (Hatalı okuma)
-            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.includes("tetik") || symbol.length < 2) {
-                continue;
-            }
-            // Eğer "1. XU100" gibi sayı varsa ikinciyi al
-            if (symbol.includes('.') && words.length > 1) {
-                 symbol = words[1];
+            let symbol = words[0]; 
+            if (symbol.includes('.') || symbol.length < 2) {
+                 if(words.length > 1) symbol = words[1];
             }
             
+            // "BOLGESINE" veya "ALIM" gibi kelimeleri sembol sanmasını engelle
+            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
+
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
 
@@ -157,7 +149,7 @@ async function run() {
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
             console.log("Rapor gönderildi.");
         } else {
-            console.log("Sessiz mod.");
+            console.log("Önemli bir değişiklik yok, sessiz mod.");
         }
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
