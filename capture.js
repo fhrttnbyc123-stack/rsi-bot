@@ -12,7 +12,7 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // CHART ID (Senin Yeni Kodun)
+    // CHART ID
     const chartId = 'cZaSxzAT'; 
     
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
@@ -47,20 +47,20 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // RENK FİLTRESİ (Siyah Zemin -> Beyaz Zemin)
+        // RENK FİLTRESİ
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (%150)
-        await page.evaluate(() => { document.body.style.zoom = "150%"; });
+        // ZOOM AYARI (%175 - İyice yaklaştırdık)
+        await page.evaluate(() => { document.body.style.zoom = "175%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ DÜZELTME ---
-        // x: 1000 -> Bayağı sola aldım. Siyah ekran çıkmaz, tablo kesin girer.
-        // width: 800 -> Genişliği arttırdım, tabloyu tam kapsar.
-        const clipArea = { x: 1000, y: 0, width: 800, height: 1080 };
+        // --- KADRAJ AYARI ---
+        // x: 850 -> Bayağı soldan başlattım, sembol isimleri garanti girsin.
+        // width: 900 -> Genişliği arttırdım, tablo sığsın.
+        const clipArea = { x: 850, y: 0, width: 900, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -79,7 +79,6 @@ async function run() {
             if (symbol.includes('.') || symbol.length < 2) {
                  if(words.length > 1) symbol = words[1];
             }
-            // Hatalı okumaları engelle
             if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
             
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
