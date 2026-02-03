@@ -53,15 +53,16 @@ async function run() {
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (%150)
-        await page.evaluate(() => { document.body.style.zoom = "150%"; });
+        // --- ZOOM AYARI (ARTTIRILDI) ---
+        // %175 yaparak daha yakın çekim alıyoruz.
+        await page.evaluate(() => { document.body.style.zoom = "175%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ DÜZELTME (SOLA KAYDIRDIK) ---
-        // x: 950 (Bayağı sola çektik)
-        // width: 700 (Genişlettik ki sağ taraf kesilmesin)
+        // --- KADRAJ DÜZELTME (SAĞA KAYDIRDIK VE GENİŞLETTİK) ---
+        // x: 1150 (Sola kaymayı düzeltmek için sağa çektik)
+        // width: 750 (Zoom artınca tablo büyüdü, sığması için genişlettik)
         // height: 1080 (Tam boy)
-        const clipArea = { x: 950, y: 0, width: 700, height: 1080 };
+        const clipArea = { x: 1150, y: 0, width: 750, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
