@@ -53,14 +53,14 @@ async function run() {
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (%175 - İyice yaklaştırdık)
+        // ZOOM AYARI (%175)
         await page.evaluate(() => { document.body.style.zoom = "175%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ AYARI ---
-        // x: 850 -> Bayağı soldan başlattım, sembol isimleri garanti girsin.
-        // width: 900 -> Genişliği arttırdım, tablo sığsın.
-        const clipArea = { x: 850, y: 0, width: 900, height: 1080 };
+        // --- KADRAJ AYARI (SOLA ALDIK) ---
+        // x: 600 -> Bayağı sola çektim, sol sütun kesin görünür.
+        // width: 1000 -> Genişliği açtım, sağ tarafı da kapsar.
+        const clipArea = { x: 600, y: 0, width: 1000, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
