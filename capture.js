@@ -12,11 +12,9 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // =================================================================
-    // DÜZELTME BURADA: SENİN YENİ ID'Nİ YAZDIM
+    // chartId DOĞRU
     const chartId = 'cZaSxzAT'; 
-    // =================================================================
-
+    
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
     
     const isManualRun = (eventName === 'workflow_dispatch');
@@ -55,15 +53,15 @@ async function run() {
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (Senin istediğin yakınlık)
+        // ZOOM AYARI (%150)
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // KADRAJ AYARI
-        // x: 1290 (1310'dan biraz sola çektim ki kenarı kesilmesin, tam ortalasın)
-        // width: 600 (Genişliği artırdım, garanti olsun)
+        // --- KADRAJ DÜZELTME (SOLA KAYDIRDIK) ---
+        // x: 950 (Bayağı sola çektik)
+        // width: 700 (Genişlettik ki sağ taraf kesilmesin)
         // height: 1080 (Tam boy)
-        const clipArea = { x: 1290, y: 0, width: 600, height: 1080 };
+        const clipArea = { x: 950, y: 0, width: 700, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
