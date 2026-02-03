@@ -13,7 +13,7 @@ async function run() {
     const bot = new TelegramBot(token);
     
     // =================================================================
-    // BURAYA YENİ GRAFİK KODUNU YAZMAYI UNUTMA! (URL'deki o karışık kod)
+    // DÜZELTİLDİ: SENİN YENİ CHART ID'N BURAYA YAZILDI
     const chartId = 'cZaSxzAT'; 
     // =================================================================
 
@@ -52,14 +52,16 @@ async function run() {
         await new Promise(r => setTimeout(r, 60000)); // 60sn bekle
 
         // OCR için renkleri ters çevir (Siyah zemin -> Beyaz zemin)
+        // Yan panelleri kapatmaya zorla
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"] { display: none !important; }
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
+        // İLK ÇALIŞAN KOORDİNATLAR (ID doğru olunca bu da doğru çalışacak)
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
@@ -84,7 +86,7 @@ async function run() {
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
 
-            // Durum Belirleme (Senin yeni indikatöre göre)
+            // Durum Belirleme
             let status = "NÖTR";
             let emoji = "";
 
@@ -108,6 +110,10 @@ async function run() {
             } else if (lowerLine.includes("bolge") || lowerLine.includes("alim")) {
                 status = "ALIM_BOLGESI"; // Bu da sessiz kalacak
                 emoji = "🔵";
+            } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
+                status = "ZİRVE"; emoji = "🟣";
+            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
+                 status = "DİPTE"; emoji = "⚪";
             }
 
             if (status !== "NÖTR") {
