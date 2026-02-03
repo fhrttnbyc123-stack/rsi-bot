@@ -12,23 +12,20 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // CHART ID (Seninki)
+    // =================================================================
+    // SENİN YENİ GRAFİK ID'N (Düzeltildi)
     const chartId = 'cZaSxzAT'; 
-    
+    // =================================================================
+
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
+    
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
     const isDailyReportTime = (trHour === 18);
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080'],
-        // SİHİRLİ DOKUNUŞ: Retina Modu (Zoom yapmadan yazıları dev gibi ve net yapar)
-        defaultViewport: {
-            width: 1920,
-            height: 1080,
-            deviceScaleFactor: 3 
-        }
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
     });
 
     const context = await browser.createIncognitoBrowserContext();
@@ -40,6 +37,7 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
+    await page.setViewport({ width: 1920, height: 1080 });
 
     try {
         console.log("Grafiğe giriliyor...");
@@ -51,26 +49,20 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // 1. FİLTRE VE GİZLEME (Sevdiğin Negatif Mod Geri Geldi)
+        // SENİN SEVDİĞİN FİLTRE (Siyah Zemin -> Beyaz Zemin)
         await page.addStyleTag({ 
-            content: `
-                /* Gereksiz her şeyi gizle */
-                [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
-                
-                /* Sadece Tabloyu ve Efsaneyi Negatif Yap (Siyah Zemin Beyaz Yazı Netliği) */
-                .pane-legend, [class*="table"] { 
-                    filter: invert(100%) contrast(200%) !important; 
-                }
-            `
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
+                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // NOT: Zoom komutunu sildim, çünkü koordinatları bozuyor. Retina modu zoom işini görüyor.
+        // ZOOM AYARI (%150 - Senin istediğin oran)
+        await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // 2. KADRAJ AYARI (1920x1080 Standart Ekrana Göre)
-        // x: 1380 -> Sağ üst köşeyi tam hizalar.
-        // width: 540 -> Tabloyu tam içine alır, boşluk bırakmaz.
-        const clipArea = { x: 1380, y: 0, width: 540, height: 1080 };
+        // --- KADRAJ DÜZELTME ---
+        // x: 1350 (Biraz daha sağa kaydırdık ki ortalasın)
+        // width: 550 (Biraz genişlettik ki tablo sığsın)
+        const clipArea = { x: 1350, y: 0, width: 550, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -89,8 +81,6 @@ async function run() {
             if (symbol.includes('.') || symbol.length < 2) {
                  if(words.length > 1) symbol = words[1];
             }
-            // Hatalı okumaları engelle
-            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
             
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
@@ -110,8 +100,6 @@ async function run() {
                 status = "ALIM_BOLGESI"; emoji = "🔵";
             } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
                 status = "ZİRVE"; emoji = "🟣";
-            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
-                 status = "DİPTE"; emoji = "⚪";
             }
 
             if (status !== "NÖTR") {
@@ -145,14 +133,13 @@ async function run() {
         if (notificationLines.length > 0) {
             let message = `🚨 **AL/SAT SİNYALİ** (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
-            console.log("Kritik sinyal gönderildi.");
         }
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 İsteğin Üzerine Kontrol" : "🕒 Günlük 18.00 Özeti";
             const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
-            console.log("Rapor gönderildi.");
-        } else {
+        } 
+        else {
             console.log("Sessiz mod.");
         }
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
