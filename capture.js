@@ -13,15 +13,16 @@ async function run() {
     const bot = new TelegramBot(token);
     
     // =================================================================
-    // BURAYA KENDİ CHART ID'Nİ YAZMAYI UNUTMA!
+    // SENİN GRAFİK ID'N (Otomatik Ayarlı)
     const chartId = 'cZaSxzAT'; 
     // =================================================================
 
+    // URL sonuna tarih ekleyerek (t=...) her seferinde taze veri çekiyoruz
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
     
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
-    const isDailyReportTime = (trHour === 18);
+    const isDailyReportTime = (trHour === 18); // Saat 18:00 kuralı
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
@@ -32,6 +33,7 @@ async function run() {
     const page = await context.newPage();
     await page.setCacheEnabled(false);
     
+    // Çerezler
     const cookies = [
         { name: 'sessionid', value: process.env.SESSION_ID, domain: '.tradingview.com' },
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
@@ -43,42 +45,29 @@ async function run() {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
-        console.log("Canlı veri...");
+        console.log("Canlı veri için dürbün ayarı yapılıyor...");
         await page.mouse.click(500, 500); 
         await page.keyboard.press('Space');
         
-        await new Promise(r => setTimeout(r, 60000)); 
+        await new Promise(r => setTimeout(r, 60000)); // 60sn bekle
 
-        // --- DÜZELTİLEN KISIM ---
-        // Filtreleri kaldırdık (Bozulmayı önlemek için).
-        // Sadece hücrelerin (td) arka planını MAT SİYAH yapıyoruz.
+        // --- SADECE GEREKSİZLERİ GİZLE (Renk/Filtre Yok) ---
         await page.addStyleTag({ 
             content: `
-                /* Yan panelleri gizle */
+                /* Yan panelleri ve araç çubuklarını gizle */
                 [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
-
-                /* Tablo hücrelerini hedefle ve arka planı MAT SİYAH yap */
-                td {
-                    background-color: #000000 !important; 
-                    opacity: 1 !important;
-                    border-bottom: 1px solid #333 !important; /* Satırları ayırmak için ince çizgi */
-                }
-                
-                /* Tablo konteynerini görünür kıl */
-                [class*="table"] {
-                    background-color: #000000 !important;
-                }
             `
         });
 
-        // Zoom ayarı (Aynı kalıyor)
+        // Zoom ayarı
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
+        // Ekran Görüntüsü
         const clipArea = { x: 1310, y: 0, width: 450, height: 950 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
-        console.log("Okunuyor...");
+        console.log("Yazılar okunuyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
@@ -90,6 +79,7 @@ async function run() {
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
             
+            // Sembol yakalama
             let symbol = words[0]; 
             if (symbol.includes('.') || symbol.length < 2) {
                  if(words.length > 1) symbol = words[1];
@@ -98,21 +88,36 @@ async function run() {
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
 
+            // Durum Belirleme
             let status = "NÖTR";
             let emoji = "";
 
+            // 1. AL FIRSATI (Bildirim Gidecek)
             if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
-                status = "ALIŞ"; emoji = "🟢";
-            } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
-                status = "SATIŞ"; emoji = "🔴";
-            } else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
-                status = "TETİK"; emoji = "🟠";
+                status = "ALIŞ";
+                emoji = "🟢";
+            } 
+            // 2. KAR AL (Bildirim Gidecek)
+            else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
+                status = "SATIŞ";
+                emoji = "🔴";
+            } 
+            // 3. Diğerleri (Sessiz Takip)
+            else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
+                status = "TETİK";
+                emoji = "🟠";
             } else if (lowerLine.includes("dikkat")) {
-                status = "DİKKAT"; emoji = "🟡";
+                status = "DİKKAT";
+                emoji = "🟡";
             } else if (lowerLine.includes("bolge") || lowerLine.includes("alim")) {
-                status = "ALIM_BOLGESI"; emoji = "🔵";
+                status = "ALIM_BOLGESI";
+                emoji = "🔵";
             } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
-                status = "ZİRVE"; emoji = "🟣";
+                status = "ZİRVE";
+                emoji = "🟣";
+            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
+                status = "DİPTE";
+                emoji = "⚪";
             }
 
             if (status !== "NÖTR") {
@@ -124,6 +129,7 @@ async function run() {
         fullReportList.sort();
         const fullReportText = fullReportList.join('\n');
 
+        // Eski durumu oku
         let lastSnapshot = {};
         if (fs.existsSync('state.json')) {
             try {
@@ -132,30 +138,53 @@ async function run() {
             } catch (e) { console.log("Hafıza tazelendi."); }
         }
 
+        // --- BİLDİRİM FİLTRESİ ---
         let notificationLines = [];
+
         for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
             let previousStatus = lastSnapshot[sym] || "NÖTR"; 
+
+            // Eğer durum değiştiyse...
             if (currentStatus !== previousStatus) {
-                if (currentStatus === "ALIŞ") notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: AL FIRSATI GELDİ!`);
-                else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR ALMA VAKTİ!`);
+                // Sadece "ALIŞ" veya "SATIŞ" ise listeye ekle
+                if (currentStatus === "ALIŞ") {
+                    notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: AL FIRSATI GELDİ!`);
+                } 
+                else if (currentStatus === "SATIŞ") {
+                    notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR ALMA VAKTİ!`);
+                }
             }
         }
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
 
+        // KARAR ANI
+        
+        // 1. Kritik Değişiklik Varsa -> FOTOĞRAF AT
         if (notificationLines.length > 0) {
-            let message = `🚨 **SİNYAL DEĞİŞİMİ** (${timestampText})\n\n` + notificationLines.join('\n');
+            let message = `🚨 **AL/SAT SİNYALİ** (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
             console.log("Kritik sinyal gönderildi.");
         }
+        
+        // 2. Manuel veya Saat 18:00 ise -> RAPOR AT
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 İsteğin Üzerine Kontrol" : "🕒 Günlük 18.00 Özeti";
-            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
+            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal görünmüyor.";
+            
+            await bot.sendPhoto(chatId, 'tablo.png', { 
+                caption: `${baslik} (${timestampText})\n\n${durumMetni}`,
+                parse_mode: 'Markdown'
+            });
             console.log("Rapor gönderildi.");
-        } else {
-            console.log("Sessiz mod.");
+        } 
+        
+        // 3. Hiçbiri değilse -> SESSİZ KAL
+        else {
+            console.log("Önemli bir değişiklik yok, sessiz mod.");
         }
+
+        // Durumu kaydet
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
     } catch (err) {
