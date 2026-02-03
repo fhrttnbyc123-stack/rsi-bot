@@ -13,7 +13,7 @@ async function run() {
     const bot = new TelegramBot(token);
     
     // =================================================================
-    // SENİN GRAFİK ID'N (Sabitlendi)
+    // CHART ID SABİT
     const chartId = 'cZaSxzAT'; 
     // =================================================================
 
@@ -49,19 +49,20 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Sadece yan panelleri gizle, tabloya dokunma (Doğal görünüm)
+        // --- SENİN SEVDİĞİN RENK AYARI (GERİ GELDİ) ---
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
+                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ AYARI (GÜNCELLENDİ) ---
-        // Tablo uzun olduğu için yüksekliği 1080 (tam boy) yaptık.
-        // Genişliği 550 yaptık ki sığmama ihtimali kalmasın.
-        // x: 1370 yaparak sağa yasladık.
-        const clipArea = { x: 1370, y: 0, width: 550, height: 1080 };
+        // --- KADRAJ AYARI (DÜZELTİLDİ) ---
+        // x: 1470 -> Başlangıcı iyice sağa çektik (Grafik görünmesin diye)
+        // width: 450 -> Genişlik ideal, tablo sığar.
+        // height: 1080 -> Tam boy, listenin en altı kesilmez.
+        const clipArea = { x: 1470, y: 0, width: 450, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -87,7 +88,6 @@ async function run() {
             let status = "NÖTR";
             let emoji = "";
 
-            // İndikatör Sinyalleri
             if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
                 status = "ALIŞ"; emoji = "🟢";
             } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
