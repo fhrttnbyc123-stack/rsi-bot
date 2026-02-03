@@ -13,7 +13,7 @@ async function run() {
     const bot = new TelegramBot(token);
     
     // =================================================================
-    // SENİN YENİ GRAFİK ID'N (Düzeltildi)
+    // DÜZELTME BURADA: SENİN YENİ ID'Nİ YAZDIM
     const chartId = 'cZaSxzAT'; 
     // =================================================================
 
@@ -49,20 +49,21 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // SENİN SEVDİĞİN FİLTRE (Siyah Zemin -> Beyaz Zemin)
+        // SEVDİĞİN RENK FİLTRESİ
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (%150 - Senin istediğin oran)
+        // ZOOM AYARI (Senin istediğin yakınlık)
         await page.evaluate(() => { document.body.style.zoom = "150%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- KADRAJ DÜZELTME ---
-        // x: 1350 (Biraz daha sağa kaydırdık ki ortalasın)
-        // width: 550 (Biraz genişlettik ki tablo sığsın)
-        const clipArea = { x: 1350, y: 0, width: 550, height: 1080 };
+        // KADRAJ AYARI
+        // x: 1290 (1310'dan biraz sola çektim ki kenarı kesilmesin, tam ortalasın)
+        // width: 600 (Genişliği artırdım, garanti olsun)
+        // height: 1080 (Tam boy)
+        const clipArea = { x: 1290, y: 0, width: 600, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -81,6 +82,8 @@ async function run() {
             if (symbol.includes('.') || symbol.length < 2) {
                  if(words.length > 1) symbol = words[1];
             }
+            // Hatalı okumaları engelle
+            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
             
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
@@ -100,6 +103,8 @@ async function run() {
                 status = "ALIM_BOLGESI"; emoji = "🔵";
             } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
                 status = "ZİRVE"; emoji = "🟣";
+            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
+                 status = "DİPTE"; emoji = "⚪";
             }
 
             if (status !== "NÖTR") {
@@ -133,11 +138,13 @@ async function run() {
         if (notificationLines.length > 0) {
             let message = `🚨 **AL/SAT SİNYALİ** (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message, parse_mode: 'Markdown' });
+            console.log("Kritik sinyal gönderildi.");
         }
         else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "🔄 İsteğin Üzerine Kontrol" : "🕒 Günlük 18.00 Özeti";
             const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
+            console.log("Rapor gönderildi.");
         } 
         else {
             console.log("Sessiz mod.");
