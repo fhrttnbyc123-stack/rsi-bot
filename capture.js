@@ -12,20 +12,23 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // =================================================================
-    // CHART ID SABİT
+    // CHART ID (Seninki)
     const chartId = 'cZaSxzAT'; 
-    // =================================================================
-
-    const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
     
+    const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
     const isManualRun = (eventName === 'workflow_dispatch');
     const trHour = (new Date().getUTCHours() + 3) % 24;
-    const isDailyReportTime = (trHour === 18); 
+    const isDailyReportTime = (trHour === 18);
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080'],
+        // SİHİRLİ DOKUNUŞ: Retina Modu (Zoom yapmadan yazıları dev gibi ve net yapar)
+        defaultViewport: {
+            width: 1920,
+            height: 1080,
+            deviceScaleFactor: 3 
+        }
     });
 
     const context = await browser.createIncognitoBrowserContext();
@@ -37,7 +40,6 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
-    await page.setViewport({ width: 1920, height: 1080 });
 
     try {
         console.log("Grafiğe giriliyor...");
@@ -49,23 +51,26 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // 1. SADECE YAN PANELLERİ GİZLE (Renklerle oynama yok)
+        // 1. FİLTRE VE GİZLEME (Sevdiğin Negatif Mod Geri Geldi)
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+            content: `
+                /* Gereksiz her şeyi gizle */
+                [class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
+                
+                /* Sadece Tabloyu ve Efsaneyi Negatif Yap (Siyah Zemin Beyaz Yazı Netliği) */
+                .pane-legend, [class*="table"] { 
+                    filter: invert(100%) contrast(200%) !important; 
+                }
+            `
         });
 
-        // 2. ZOOM AYARI (GERİ GELDİ VE ARTTIRILDI)
-        // %175 yaparak tabloyu "burnumuzun dibine" getiriyoruz.
-        await page.evaluate(() => { document.body.style.zoom = "175%"; });
-        
+        // NOT: Zoom komutunu sildim, çünkü koordinatları bozuyor. Retina modu zoom işini görüyor.
         await new Promise(r => setTimeout(r, 5000));
 
-        // 3. KADRAJ AYARI (ZOOM'A GÖRE HESAPLANDI)
-        // Zoom yapınca tablo sağa kaçar, o yüzden x değerini ayarladık.
-        // x: 1300 -> Sağ tarafı hedefler.
-        // width: 620 -> Tablonun tamamını alır.
-        // height: 1080 -> Listenin en altını kesmez.
-        const clipArea = { x: 1300, y: 0, width: 620, height: 1080 };
+        // 2. KADRAJ AYARI (1920x1080 Standart Ekrana Göre)
+        // x: 1380 -> Sağ üst köşeyi tam hizalar.
+        // width: 540 -> Tabloyu tam içine alır, boşluk bırakmaz.
+        const clipArea = { x: 1380, y: 0, width: 540, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
@@ -84,10 +89,9 @@ async function run() {
             if (symbol.includes('.') || symbol.length < 2) {
                  if(words.length > 1) symbol = words[1];
             }
-            
-            // "BOLGESINE" veya "ALIM" gibi kelimeleri sembol sanmasını engelle
+            // Hatalı okumaları engelle
             if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
-
+            
             let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
 
@@ -149,7 +153,7 @@ async function run() {
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}`, parse_mode: 'Markdown' });
             console.log("Rapor gönderildi.");
         } else {
-            console.log("Önemli bir değişiklik yok, sessiz mod.");
+            console.log("Sessiz mod.");
         }
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
