@@ -41,17 +41,16 @@ async function run() {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
-        // REKLAMIN ÇIKMASI İÇİN BİRAZ BEKLE
+        // Reklamlar için bekle
         await new Promise(r => setTimeout(r, 8000)); 
 
-        // --- OTOMATİK REKLAM KAPATICI ---
+        // --- REKLAM KAPATICI ---
         console.log("Reklam ve uyarılar kontrol ediliyor...");
         await page.evaluate(() => {
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
             for (let el of closeElements) { 
                 if (el && el.click) el.click(); 
             }
-            
             const allButtons = document.querySelectorAll('button, div[role="button"], span');
             for (let btn of allButtons) {
                 let text = (btn.innerText || "").toLowerCase().trim();
@@ -69,30 +68,40 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // GEREKSİZLERİ GİZLE
+        // GEREKSİZ SAĞ PANELLERİ GİZLE
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
-                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
 
-        // --- ZOOM AYARI (%200'e çıkarıldı) ---
-        await page.evaluate(() => { document.body.style.zoom = "200%"; });
+        // --- ZOOM AYARI (İdeal Oran) ---
+        await page.evaluate(() => { document.body.style.zoom = "185%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- GARANTİLİ OPAKLAŞTIRMA (HOVER) SÜPÜRMESİ ---
-        console.log("Tablo opaklaştırılıyor (Mumlar arkaya itiliyor)...");
-        // Zoom %200 olduğunda tablo ekranın sağ yarısında (700-900 x koordinatları arasında) devleşir.
-        await page.mouse.move(700, 200); 
-        await new Promise(r => setTimeout(r, 300));
-        await page.mouse.move(780, 250, { steps: 15 }); // Tablonun kalbine doğru kaydır
-        await new Promise(r => setTimeout(r, 300));
-        await page.mouse.move(820, 300, { steps: 10 }); // Tam ortasında dur
-        await new Promise(r => setTimeout(r, 2000)); // Efektin oturması için yeterince bekle
+        // --- AKILLI FARE (TAM OPAKLAŞTIRMA İÇİN) ---
+        console.log("Tablonun yeri aranıyor...");
+        const tablePos = await page.evaluate(() => {
+            // Ekranda "SEMBOL" yazısını ara
+            const elements = Array.from(document.querySelectorAll('td, th, div, span'));
+            const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
+            
+            if (target) {
+                const rect = target.getBoundingClientRect();
+                // Fareyi SEMBOL yazısının hemen sağına/aşağısına (tablonun tam içine) yönlendir
+                return { x: rect.x + 30, y: rect.y + 30 };
+            }
+            // Bulamazsa varsayılan tahmini konuma git
+            return { x: 700, y: 250 };
+        });
 
-        // --- KADRAJ AYARI (DAHA DA SOLA KAYDIRILDI) ---
-        // x: 400 (Daha da sola çektik, sol taraf artık imkanı yok kesilmez)
-        // width: 1200 (Tablonun tüm genişliğini kapsar)
-        const clipArea = { x: 400, y: 0, width: 1200, height: 1080 };
+        console.log(`Fare tablonun üstüne gidiyor: x=${tablePos.x}, y=${tablePos.y}`);
+        await page.mouse.move(tablePos.x, tablePos.y, { steps: 10 }); // Gerçekçi kaydırma
+        await page.mouse.click(tablePos.x, tablePos.y); // Tabloyu öne almak için tıkla
+        await new Promise(r => setTimeout(r, 2000)); // Tablonun opaklaşması için bekle
+
+        // --- DOĞRU KADRAJ (ORTALI AYARA DÖNÜŞ) ---
+        // x: 600 (Çok sola gitmişti, geri toparladık)
+        // width: 1100 (Tablonun tamamı rahat sığar)
+        const clipArea = { x: 600, y: 0, width: 1100, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
