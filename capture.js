@@ -55,12 +55,19 @@ async function run() {
 
         // ZOOM AYARI (%175)
         await page.evaluate(() => { document.body.style.zoom = "175%"; });
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 2000));
 
-        // --- KADRAJ AYARI (SOLA ALDIK) ---
-        // x: 600 -> Bayağı sola çektim, sol sütun kesin görünür.
-        // width: 1000 -> Genişliği açtım, sağ tarafı da kapsar.
-        const clipArea = { x: 600, y: 0, width: 1000, height: 1080 };
+        // --- YENİ: HOVER (ÜZERİNE GELME) EFEKTİ ---
+        // Fareyi ekranın sağ üst kısmına (tablonun olduğu yere) götürür.
+        // Bu sayede TradingView tabloyu şeffaflıktan çıkarıp opaklaştırır!
+        console.log("Tablo opaklaştırılıyor...");
+        await page.mouse.move(1600, 300); 
+        await new Promise(r => setTimeout(r, 1500)); // Efektin devreye girmesi için bekle
+
+        // --- KADRAJ AYARI (TAM ORTALAMA) ---
+        // x: 950 ile ekranın tam sağ yarısını alıyoruz. (Gereksiz sol boşluklar atıldı)
+        // width: 970 ile ekranın en sağına kadar kapsıyoruz. (Tablo kesilmeyecek)
+        const clipArea = { x: 950, y: 0, width: 970, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
