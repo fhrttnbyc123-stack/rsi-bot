@@ -12,7 +12,7 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // SENİN CHART ID
+    // CHART ID
     const chartId = 'cZaSxzAT'; 
     
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
@@ -44,16 +44,14 @@ async function run() {
         // REKLAMIN ÇIKMASI İÇİN BİRAZ BEKLE
         await new Promise(r => setTimeout(r, 8000)); 
 
-        // --- YENİ: OTOMATİK REKLAM/POP-UP KAPATICI ---
+        // --- OTOMATİK REKLAM/POP-UP KAPATICI ---
         console.log("Reklam ve uyarılar kontrol ediliyor...");
         await page.evaluate(() => {
-            // 1. Klasik Çarpı (X) butonlarını bul ve tıkla
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
             for (let el of closeElements) { 
                 if (el && el.click) el.click(); 
             }
             
-            // 2. Metin içeren butonları bul (Reddet, Hayır, Cancel vb.)
             const allButtons = document.querySelectorAll('button, div[role="button"], span');
             for (let btn of allButtons) {
                 let text = (btn.innerText || "").toLowerCase().trim();
@@ -63,7 +61,7 @@ async function run() {
             }
         });
         
-        await new Promise(r => setTimeout(r, 2000)); // Kapandıktan sonra nefes al
+        await new Promise(r => setTimeout(r, 2000)); 
         
         console.log("Canlı veri...");
         await page.mouse.click(500, 500); 
@@ -71,25 +69,30 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // RENK FİLTRESİ
+        // GEREKSİZLERİ GİZLE
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
-                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
 
-        // ZOOM AYARI (%175)
-        await page.evaluate(() => { document.body.style.zoom = "175%"; });
+        // --- ZOOM AYARI (10 BİRİM YAKLAŞTIK) ---
+        // %175 -> %185 yapıldı
+        await page.evaluate(() => { document.body.style.zoom = "185%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- YENİ: OPAKLAŞTIRMA (HOVER) EFEKTİ ---
+        // --- OPAKLAŞTIRMA (HOVER) EFEKTİ SÜPÜRMESİ ---
         console.log("Tablo opaklaştırılıyor...");
-        await page.mouse.move(1400, 300); // Sanal fareyi tablonun olduğu yere götürür
-        await new Promise(r => setTimeout(r, 1500)); // Efektin aktif olması için bekle
+        // Fareyi sağ üstte birkaç farklı noktada gezdiriyoruz ki tablo kesinlikle fareyi algılasın ve opaklaşsın.
+        await page.mouse.move(1200, 200); 
+        await new Promise(r => setTimeout(r, 500));
+        await page.mouse.move(1400, 200); 
+        await new Promise(r => setTimeout(r, 500));
+        await page.mouse.move(1600, 300); 
+        await new Promise(r => setTimeout(r, 1500)); // Son durakta opaklık için bekle
 
-        // --- KADRAJ AYARI (GÜVENLİ GENİŞLİK) ---
-        // x: 800 (Sola çektik, tablo tam girsin)
-        // width: 1100 (Sağ tarafı fulledik, hiçbir yer kesilmesin)
-        const clipArea = { x: 800, y: 0, width: 1100, height: 1080 };
+        // --- KADRAJ AYARI (100 BİRİM SOLA KAYDIK) ---
+        // x: 650 (800'den 650'ye çektim, sol taraf kesilmez)
+        // width: 1200 (Genişliği artırdım sağdan da kesilmesin diye)
+        const clipArea = { x: 650, y: 0, width: 1200, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
