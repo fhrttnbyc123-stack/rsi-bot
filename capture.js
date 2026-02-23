@@ -69,32 +69,30 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // GEREKSİZLERİ GİZLE VE FİLTREYİ UYGULA
+        // GEREKSİZLERİ GİZLE
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
                       .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // ZOOM AYARI (%185)
-        await page.evaluate(() => { document.body.style.zoom = "185%"; });
+        // --- ZOOM AYARI (%200'e çıkarıldı) ---
+        await page.evaluate(() => { document.body.style.zoom = "200%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- GELİŞMİŞ OPAKLAŞTIRMA (GERÇEKÇİ HOVER) ---
-        console.log("Tablo opaklaştırılıyor...");
-        // Işınlanmak yerine gerçek bir insan gibi fareyi kaydırarak götürüyoruz (steps: 20)
-        await page.mouse.move(500, 200); 
-        await page.mouse.move(700, 300, { steps: 20 });
-        await page.mouse.move(900, 400, { steps: 20 });
-        await page.mouse.move(800, 350, { steps: 10 });
-        
-        // Tablonun öne gelmesini garantilemek için üstüne ufak bir sol tık yapıyoruz
-        await page.mouse.click(800, 350);
-        await new Promise(r => setTimeout(r, 1500)); // Efektin oturması için bekle
+        // --- GARANTİLİ OPAKLAŞTIRMA (HOVER) SÜPÜRMESİ ---
+        console.log("Tablo opaklaştırılıyor (Mumlar arkaya itiliyor)...");
+        // Zoom %200 olduğunda tablo ekranın sağ yarısında (700-900 x koordinatları arasında) devleşir.
+        await page.mouse.move(700, 200); 
+        await new Promise(r => setTimeout(r, 300));
+        await page.mouse.move(780, 250, { steps: 15 }); // Tablonun kalbine doğru kaydır
+        await new Promise(r => setTimeout(r, 300));
+        await page.mouse.move(820, 300, { steps: 10 }); // Tam ortasında dur
+        await new Promise(r => setTimeout(r, 2000)); // Efektin oturması için yeterince bekle
 
-        // --- KADRAJ AYARI (DAHA SOLA ÇEKİLDİ) ---
-        // x: 500 (Daha da sola çektik, yazılar asla kesilmez)
-        // width: 1200 (Genişliği büyük tuttuk ki tüm tabloyu kapsasın)
-        const clipArea = { x: 500, y: 0, width: 1200, height: 1080 };
+        // --- KADRAJ AYARI (DAHA DA SOLA KAYDIRILDI) ---
+        // x: 400 (Daha da sola çektik, sol taraf artık imkanı yok kesilmez)
+        // width: 1200 (Tablonun tüm genişliğini kapsar)
+        const clipArea = { x: 400, y: 0, width: 1200, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
