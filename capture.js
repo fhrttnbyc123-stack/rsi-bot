@@ -44,7 +44,7 @@ async function run() {
         // REKLAMIN ÇIKMASI İÇİN BİRAZ BEKLE
         await new Promise(r => setTimeout(r, 8000)); 
 
-        // --- OTOMATİK REKLAM/POP-UP KAPATICI ---
+        // --- OTOMATİK REKLAM KAPATICI ---
         console.log("Reklam ve uyarılar kontrol ediliyor...");
         await page.evaluate(() => {
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
@@ -69,30 +69,32 @@ async function run() {
         
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // GEREKSİZLERİ GİZLE
+        // GEREKSİZLERİ GİZLE VE FİLTREYİ UYGULA
         await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }
+                      .pane-legend, [class*="table"] { filter: invert(100%) contrast(200%) !important; }`
         });
 
-        // --- ZOOM AYARI (10 BİRİM YAKLAŞTIK) ---
-        // %175 -> %185 yapıldı
+        // ZOOM AYARI (%185)
         await page.evaluate(() => { document.body.style.zoom = "185%"; });
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- OPAKLAŞTIRMA (HOVER) EFEKTİ SÜPÜRMESİ ---
+        // --- GELİŞMİŞ OPAKLAŞTIRMA (GERÇEKÇİ HOVER) ---
         console.log("Tablo opaklaştırılıyor...");
-        // Fareyi sağ üstte birkaç farklı noktada gezdiriyoruz ki tablo kesinlikle fareyi algılasın ve opaklaşsın.
-        await page.mouse.move(1200, 200); 
-        await new Promise(r => setTimeout(r, 500));
-        await page.mouse.move(1400, 200); 
-        await new Promise(r => setTimeout(r, 500));
-        await page.mouse.move(1600, 300); 
-        await new Promise(r => setTimeout(r, 1500)); // Son durakta opaklık için bekle
+        // Işınlanmak yerine gerçek bir insan gibi fareyi kaydırarak götürüyoruz (steps: 20)
+        await page.mouse.move(500, 200); 
+        await page.mouse.move(700, 300, { steps: 20 });
+        await page.mouse.move(900, 400, { steps: 20 });
+        await page.mouse.move(800, 350, { steps: 10 });
+        
+        // Tablonun öne gelmesini garantilemek için üstüne ufak bir sol tık yapıyoruz
+        await page.mouse.click(800, 350);
+        await new Promise(r => setTimeout(r, 1500)); // Efektin oturması için bekle
 
-        // --- KADRAJ AYARI (100 BİRİM SOLA KAYDIK) ---
-        // x: 650 (800'den 650'ye çektim, sol taraf kesilmez)
-        // width: 1200 (Genişliği artırdım sağdan da kesilmesin diye)
-        const clipArea = { x: 650, y: 0, width: 1200, height: 1080 };
+        // --- KADRAJ AYARI (DAHA SOLA ÇEKİLDİ) ---
+        // x: 500 (Daha da sola çektik, yazılar asla kesilmez)
+        // width: 1200 (Genişliği büyük tuttuk ki tüm tabloyu kapsasın)
+        const clipArea = { x: 500, y: 0, width: 1200, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
