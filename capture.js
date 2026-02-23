@@ -12,7 +12,7 @@ async function run() {
     const eventName = process.env.GITHUB_EVENT_NAME; 
     const bot = new TelegramBot(token);
     
-    // CHART ID
+    // SENİN CHART ID
     const chartId = 'cZaSxzAT'; 
     
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
@@ -41,6 +41,30 @@ async function run() {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         
+        // REKLAMIN ÇIKMASI İÇİN BİRAZ BEKLE
+        await new Promise(r => setTimeout(r, 8000)); 
+
+        // --- YENİ: OTOMATİK REKLAM/POP-UP KAPATICI ---
+        console.log("Reklam ve uyarılar kontrol ediliyor...");
+        await page.evaluate(() => {
+            // 1. Klasik Çarpı (X) butonlarını bul ve tıkla
+            const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
+            for (let el of closeElements) { 
+                if (el && el.click) el.click(); 
+            }
+            
+            // 2. Metin içeren butonları bul (Reddet, Hayır, Cancel vb.)
+            const allButtons = document.querySelectorAll('button, div[role="button"], span');
+            for (let btn of allButtons) {
+                let text = (btn.innerText || "").toLowerCase().trim();
+                if (text === 'reddet' || text === 'hayır' || text.includes('teklifi reddet') || text === 'kapat') {
+                    if (btn.click) btn.click();
+                }
+            }
+        });
+        
+        await new Promise(r => setTimeout(r, 2000)); // Kapandıktan sonra nefes al
+        
         console.log("Canlı veri...");
         await page.mouse.click(500, 500); 
         await page.keyboard.press('Space');
@@ -55,19 +79,17 @@ async function run() {
 
         // ZOOM AYARI (%175)
         await page.evaluate(() => { document.body.style.zoom = "175%"; });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 5000));
 
-        // --- YENİ: HOVER (ÜZERİNE GELME) EFEKTİ ---
-        // Fareyi ekranın sağ üst kısmına (tablonun olduğu yere) götürür.
-        // Bu sayede TradingView tabloyu şeffaflıktan çıkarıp opaklaştırır!
+        // --- YENİ: OPAKLAŞTIRMA (HOVER) EFEKTİ ---
         console.log("Tablo opaklaştırılıyor...");
-        await page.mouse.move(1600, 300); 
-        await new Promise(r => setTimeout(r, 1500)); // Efektin devreye girmesi için bekle
+        await page.mouse.move(1400, 300); // Sanal fareyi tablonun olduğu yere götürür
+        await new Promise(r => setTimeout(r, 1500)); // Efektin aktif olması için bekle
 
-        // --- KADRAJ AYARI (TAM ORTALAMA) ---
-        // x: 950 ile ekranın tam sağ yarısını alıyoruz. (Gereksiz sol boşluklar atıldı)
-        // width: 970 ile ekranın en sağına kadar kapsıyoruz. (Tablo kesilmeyecek)
-        const clipArea = { x: 950, y: 0, width: 970, height: 1080 };
+        // --- KADRAJ AYARI (GÜVENLİ GENİŞLİK) ---
+        // x: 800 (Sola çektik, tablo tam girsin)
+        // width: 1100 (Sağ tarafı fulledik, hiçbir yer kesilmesin)
+        const clipArea = { x: 800, y: 0, width: 1100, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
