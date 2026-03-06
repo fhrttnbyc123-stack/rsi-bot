@@ -72,7 +72,7 @@ async function run() {
 
         // Sabit kırpma: sağ üst köşe, tam tablo alanı
         // 1920px genişlikte tablo ~480px genişliğinde, sağ kenarda
-        const clipArea = { x: 1430, y: 55, width: 490, height: 1000 };
+        const clipArea = { x: 130, y: 55, width: 420, height: 1000 };
         
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Ekran görüntüsü alındı.");
