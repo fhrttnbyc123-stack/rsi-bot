@@ -88,7 +88,7 @@ async function run() {
         await new Promise(r => setTimeout(r, 2000));
 
         // DEĞİŞİKLİK: x 600→530, width 1100→500 (sadece tablo alanı)
-        const clipArea = { x: 530, y: 0, width: 500, height: 1080 };
+        const clipArea = { x: 480, y: 55, width: 580, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
 
         console.log("Okunuyor...");
