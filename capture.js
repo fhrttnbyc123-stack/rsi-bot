@@ -38,11 +38,15 @@ async function run() {
     try {
         console.log("Grafiğe giriliyor...");
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
+        
         await new Promise(r => setTimeout(r, 8000)); 
 
+        console.log("Reklam ve uyarılar kontrol ediliyor...");
         await page.evaluate(() => {
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
-            for (let el of closeElements) { if (el && el.click) el.click(); }
+            for (let el of closeElements) { 
+                if (el && el.click) el.click(); 
+            }
             const allButtons = document.querySelectorAll('button, div[role="button"], span');
             for (let btn of allButtons) {
                 let text = (btn.innerText || "").toLowerCase().trim();
@@ -53,30 +57,41 @@ async function run() {
         });
         
         await new Promise(r => setTimeout(r, 2000)); 
+        
+        console.log("Canlı veri...");
         await page.mouse.click(500, 500); 
         await page.keyboard.press('Space');
+        
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Sağ paneli gizle
-        await page.addStyleTag({ content: `
-            [class*="layout__area--right"],
-            [class*="widgetbar"],
-            .tv-floating-toolbar { display: none !important; }
-        `});
+        await page.addStyleTag({ 
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+        });
+
+        await page.evaluate(() => { document.body.style.zoom = "185%"; });
+        await new Promise(r => setTimeout(r, 5000));
+
+        console.log("Tablonun yeri aranıyor...");
+        const tablePos = await page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('td, th, div, span'));
+            const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
+            if (target) {
+                const rect = target.getBoundingClientRect();
+                return { x: rect.x + 30, y: rect.y + 30 };
+            }
+            return { x: 700, y: 250 };
+        });
+
+        console.log(`Fare tablonun üstüne gidiyor: x=${tablePos.x}, y=${tablePos.y}`);
+        await page.mouse.move(tablePos.x, tablePos.y, { steps: 10 });
+        await page.mouse.click(tablePos.x, tablePos.y);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Fareyi tablonun üstüne götür (sağ üst köşe sabit)
-        await page.mouse.move(1600, 200, { steps: 10 });
-        await page.mouse.click(1600, 200);
-        await new Promise(r => setTimeout(r, 2000));
-
-        // Sabit kırpma: sağ üst köşe, tam tablo alanı
-        // 1920px genişlikte tablo ~480px genişliğinde, sağ kenarda
-        const clipArea = { x: 130, y: 55, width: 420, height: 1000 };
-        
+        // DEĞİŞİKLİK: x 600→530, width 1100→500 (sadece tablo alanı)
+        const clipArea = { x: 530, y: 0, width: 500, height: 1080 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
-        console.log("Ekran görüntüsü alındı.");
 
+        console.log("Okunuyor...");
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
@@ -87,15 +102,19 @@ async function run() {
             if (!line || line.trim().length < 5) continue;
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
+            
             let symbol = words[0]; 
             if (symbol.includes('.') || symbol.length < 2) {
-                if (words.length > 1) symbol = words[1];
+                 if(words.length > 1) symbol = words[1];
             }
             if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
-            let safeSymbol = symbol.replace(/[_*[\]()~`>#+\-=|{}.!]/g, ' ').trim();
+            
+            let safeSymbol = symbol.replace(/_/g, '\\_'); 
             let rawSymbol = symbol.replace(/\\/g, ''); 
+
             let status = "NÖTR";
             let emoji = "";
+
             if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
                 status = "ALIŞ"; emoji = "🟢";
             } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
@@ -109,8 +128,9 @@ async function run() {
             } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
                 status = "ZİRVE"; emoji = "🟣";
             } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
-                status = "DİPTE"; emoji = "⚪";
+                 status = "DİPTE"; emoji = "⚪";
             }
+
             if (status !== "NÖTR") {
                 currentSnapshot[rawSymbol] = status;
                 fullReportList.push(`${emoji} ${safeSymbol}: ${status}`);
@@ -119,6 +139,7 @@ async function run() {
 
         fullReportList.sort();
         const fullReportText = fullReportList.join('\n');
+
         let lastSnapshot = {};
         if (fs.existsSync('state.json')) {
             try {
@@ -126,23 +147,28 @@ async function run() {
                 if (content.snapshot) lastSnapshot = content.snapshot;
             } catch (e) { console.log("Hafıza tazelendi."); }
         }
+
         let notificationLines = [];
         for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
             let previousStatus = lastSnapshot[sym] || "NÖTR"; 
             if (currentStatus !== previousStatus) {
-                if (currentStatus === "ALIŞ") notificationLines.push(`🟢 ${sym}: AL FIRSATI GELDI!`);
-                else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym}: KAR ALMA VAKTI!`);
+                if (currentStatus === "ALIŞ") notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: AL FIRSATI GELDİ!`);
+                else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR ALMA VAKTİ!`);
             }
         }
+
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+
         if (notificationLines.length > 0) {
-            let message = `BEKAP Pro Sinyal (${timestampText})\n\n` + notificationLines.join('\n');
+            let message = `AL/SAT SİNYALİ (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message });
-        } else if (isManualRun || isDailyReportTime) {
-            const baslik = isManualRun ? "Manuel Kontrol" : "Gunluk 18.00 Ozeti";
+        }
+        else if (isManualRun || isDailyReportTime) {
+            const baslik = isManualRun ? "İsteğin Üzerine Kontrol" : "Günlük 18.00 Özeti";
             const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
             await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}` });
-        } else {
+        } 
+        else {
             console.log("Sessiz mod.");
         }
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
