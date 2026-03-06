@@ -40,7 +40,6 @@ async function run() {
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         await new Promise(r => setTimeout(r, 8000)); 
 
-        // Reklamları kapat
         await page.evaluate(() => {
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
             for (let el of closeElements) { if (el && el.click) el.click(); }
@@ -58,13 +57,19 @@ async function run() {
         await page.keyboard.press('Space');
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Sağ paneli gizle
-        await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
-        });
+        // Sağ panel + fiyat ekseni + grafik ikonlarını gizle
+        await page.addStyleTag({ content: `
+            [class*="layout__area--right"],
+            [class*="widgetbar"],
+            .tv-floating-toolbar,
+            [class*="price-axis"],
+            [class*="paneControls"],
+            [class*="watermark"],
+            [data-name="go-to-date-button"] { display: none !important; }
+        `});
         await new Promise(r => setTimeout(r, 2000));
 
-        // ZOOM YOK — tabloyu DOM'dan bul, fareyi üstüne götür, opaklaştır
+        // Fareyi tabloya götür
         const tablePos = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('td, th, div, span'));
             const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
@@ -79,47 +84,49 @@ async function run() {
         await page.mouse.click(tablePos.x, tablePos.y);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Tablonun tam sınırlarını al
+        // Tablonun tam sınırlarını bul — SEMBOL başlığından tüm tabloyu kapsa
         const tableRect = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('td, th, div, span'));
             const header = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
             if (!header) return null;
             
-            // SEMBOL hücresinden yukarı çık, tablo container'ı bul
-            let el = header.parentElement;
-            for (let i = 0; i < 10; i++) {
-                if (!el) break;
-                const rect = el.getBoundingClientRect();
-                // Yeterince geniş ve uzun bir eleman bulduk
-                if (rect.width > 200 && rect.height > 300) {
-                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            // Tüm tablo hücrelerini bul (aynı container içindeki)
+            let container = header.parentElement;
+            for (let i = 0; i < 15; i++) {
+                if (!container) break;
+                const rect = container.getBoundingClientRect();
+                if (rect.width > 300 && rect.height > 400) {
+                    return { 
+                        x: rect.x, 
+                        y: rect.y, 
+                        width: rect.width, 
+                        height: rect.height,
+                        found: true
+                    };
                 }
-                el = el.parentElement;
+                container = container.parentElement;
             }
-            // Bulamazsa header'dan tahmin et
+            // Bulamazsa header konumundan hesapla
             const rect = header.getBoundingClientRect();
-            return { x: rect.x - 10, y: rect.y - 30, width: 450, height: 750 };
+            return { x: rect.x - 5, y: rect.y - 30, width: 430, height: 800, found: false };
         });
 
         let clipArea;
         if (tableRect) {
             clipArea = {
                 x: Math.max(0, Math.floor(tableRect.x) - 5),
-                y: Math.max(0, Math.floor(tableRect.y) - 5),
-                width: Math.min(Math.ceil(tableRect.width) + 10, 600),
-                height: Math.min(Math.ceil(tableRect.height) + 10, 1080)
+                y: Math.max(0, Math.floor(tableRect.y) - 35), // 35px yukarı — başlık sığsın
+                width: Math.min(Math.ceil(tableRect.width) + 10, 500),
+                height: Math.min(Math.ceil(tableRect.height) + 40, 1080)
             };
-            console.log(`Tablo bulundu: ${JSON.stringify(clipArea)}`);
         } else {
-            // Fallback: sağ üst köşe (TradingView'da tablo genelde burada)
-            clipArea = { x: 1400, y: 60, width: 520, height: 980 };
-            console.log("Fallback clip kullanılıyor.");
+            clipArea = { x: 130, y: 60, width: 420, height: 980 };
         }
-
+        
+        console.log(`Clip: ${JSON.stringify(clipArea)}`);
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Ekran görüntüsü alındı.");
 
-        // OCR
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
@@ -130,19 +137,15 @@ async function run() {
             if (!line || line.trim().length < 5) continue;
             let lowerLine = line.toLowerCase();
             let words = line.trim().split(/\s+/);
-            
             let symbol = words[0]; 
             if (symbol.includes('.') || symbol.length < 2) {
                 if (words.length > 1) symbol = words[1];
             }
             if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
-            
             let safeSymbol = symbol.replace(/[_*[\]()~`>#+\-=|{}.!]/g, ' ').trim();
             let rawSymbol = symbol.replace(/\\/g, ''); 
-
             let status = "NÖTR";
             let emoji = "";
-
             if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
                 status = "ALIŞ"; emoji = "🟢";
             } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
@@ -158,7 +161,6 @@ async function run() {
             } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
                 status = "DİPTE"; emoji = "⚪";
             }
-
             if (status !== "NÖTR") {
                 currentSnapshot[rawSymbol] = status;
                 fullReportList.push(`${emoji} ${safeSymbol}: ${status}`);
@@ -167,7 +169,6 @@ async function run() {
 
         fullReportList.sort();
         const fullReportText = fullReportList.join('\n');
-
         let lastSnapshot = {};
         if (fs.existsSync('state.json')) {
             try {
@@ -175,7 +176,6 @@ async function run() {
                 if (content.snapshot) lastSnapshot = content.snapshot;
             } catch (e) { console.log("Hafıza tazelendi."); }
         }
-
         let notificationLines = [];
         for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
             let previousStatus = lastSnapshot[sym] || "NÖTR"; 
@@ -184,9 +184,7 @@ async function run() {
                 else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym}: KAR ALMA VAKTI!`);
             }
         }
-
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-
         if (notificationLines.length > 0) {
             let message = `BEKAP Pro Sinyal (${timestampText})\n\n` + notificationLines.join('\n');
             await bot.sendPhoto(chatId, 'tablo.png', { caption: message });
@@ -197,7 +195,6 @@ async function run() {
         } else {
             console.log("Sessiz mod.");
         }
-
         fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
     } catch (err) {
