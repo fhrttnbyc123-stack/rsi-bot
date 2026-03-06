@@ -57,73 +57,23 @@ async function run() {
         await page.keyboard.press('Space');
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Sağ panel + fiyat ekseni + grafik ikonlarını gizle
+        // Sağ paneli gizle
         await page.addStyleTag({ content: `
             [class*="layout__area--right"],
             [class*="widgetbar"],
-            .tv-floating-toolbar,
-            [class*="price-axis"],
-            [class*="paneControls"],
-            [class*="watermark"],
-            [data-name="go-to-date-button"] { display: none !important; }
+            .tv-floating-toolbar { display: none !important; }
         `});
         await new Promise(r => setTimeout(r, 2000));
 
-        // Fareyi tabloya götür
-        const tablePos = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('td, th, div, span'));
-            const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
-            if (target) {
-                const rect = target.getBoundingClientRect();
-                return { x: rect.x + 30, y: rect.y + 30 };
-            }
-            return { x: 1400, y: 150 };
-        });
-
-        await page.mouse.move(tablePos.x, tablePos.y, { steps: 10 });
-        await page.mouse.click(tablePos.x, tablePos.y);
+        // Fareyi tablonun üstüne götür (sağ üst köşe sabit)
+        await page.mouse.move(1600, 200, { steps: 10 });
+        await page.mouse.click(1600, 200);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Tablonun tam sınırlarını bul — SEMBOL başlığından tüm tabloyu kapsa
-        const tableRect = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('td, th, div, span'));
-            const header = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
-            if (!header) return null;
-            
-            // Tüm tablo hücrelerini bul (aynı container içindeki)
-            let container = header.parentElement;
-            for (let i = 0; i < 15; i++) {
-                if (!container) break;
-                const rect = container.getBoundingClientRect();
-                if (rect.width > 300 && rect.height > 400) {
-                    return { 
-                        x: rect.x, 
-                        y: rect.y, 
-                        width: rect.width, 
-                        height: rect.height,
-                        found: true
-                    };
-                }
-                container = container.parentElement;
-            }
-            // Bulamazsa header konumundan hesapla
-            const rect = header.getBoundingClientRect();
-            return { x: rect.x - 5, y: rect.y - 30, width: 430, height: 800, found: false };
-        });
-
-        let clipArea;
-        if (tableRect) {
-            clipArea = {
-                x: Math.max(0, Math.floor(tableRect.x) - 5),
-                y: Math.max(0, Math.floor(tableRect.y) - 35), // 35px yukarı — başlık sığsın
-                width: Math.min(Math.ceil(tableRect.width) + 10, 500),
-                height: Math.min(Math.ceil(tableRect.height) + 40, 1080)
-            };
-        } else {
-            clipArea = { x: 130, y: 60, width: 420, height: 980 };
-        }
+        // Sabit kırpma: sağ üst köşe, tam tablo alanı
+        // 1920px genişlikte tablo ~480px genişliğinde, sağ kenarda
+        const clipArea = { x: 1430, y: 55, width: 490, height: 1000 };
         
-        console.log(`Clip: ${JSON.stringify(clipArea)}`);
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Ekran görüntüsü alındı.");
 
