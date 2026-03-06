@@ -40,7 +40,7 @@ async function run() {
         await page.goto(chartUrl, { waitUntil: 'load', timeout: 150000 });
         await new Promise(r => setTimeout(r, 8000)); 
 
-        console.log("Reklam ve uyarılar kontrol ediliyor...");
+        // Reklamları kapat
         await page.evaluate(() => {
             const closeElements = document.querySelectorAll('button[class*="close"], [data-name="close"], .tv-dialog__close');
             for (let el of closeElements) { if (el && el.click) el.click(); }
@@ -58,24 +58,13 @@ async function run() {
         await page.keyboard.press('Space');
         await new Promise(r => setTimeout(r, 60000)); 
 
-        // Sağ panel, toolbar ve fiyat eksenini gizle
+        // Sağ paneli gizle
         await page.addStyleTag({ 
-            content: `
-                [class*="layout__area--right"],
-                [class*="widgetbar"],
-                .tv-floating-toolbar,
-                [class*="price-axis"],
-                [class*="pane-legend"],
-                [data-name="legend"] { display: none !important; }
-            `
+            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
+        await new Promise(r => setTimeout(r, 2000));
 
-        // Zoom düşürüldü: 185 → 130
-        await page.evaluate(() => { document.body.style.zoom = "130%"; });
-        await new Promise(r => setTimeout(r, 3000));
-
-        // Tabloyu bul ve üstüne git
-        console.log("Tablonun yeri aranıyor...");
+        // ZOOM YOK — tabloyu DOM'dan bul, fareyi üstüne götür, opaklaştır
         const tablePos = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('td, th, div, span'));
             const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
@@ -83,56 +72,54 @@ async function run() {
                 const rect = target.getBoundingClientRect();
                 return { x: rect.x + 30, y: rect.y + 30 };
             }
-            return { x: 800, y: 150 };
+            return { x: 1400, y: 150 };
         });
 
-        console.log(`Fare: x=${tablePos.x}, y=${tablePos.y}`);
         await page.mouse.move(tablePos.x, tablePos.y, { steps: 10 });
         await page.mouse.click(tablePos.x, tablePos.y);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Tablonun tam konumunu al
+        // Tablonun tam sınırlarını al
         const tableRect = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('td, th, div, span'));
             const header = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
-            if (header) {
-                // En yakın tablo elementini bul
-                let el = header;
-                while (el && el.tagName !== 'TABLE' && !el.className.includes('table')) {
-                    el = el.parentElement;
-                    if (!el) break;
-                }
-                if (el) {
-                    const rect = el.getBoundingClientRect();
+            if (!header) return null;
+            
+            // SEMBOL hücresinden yukarı çık, tablo container'ı bul
+            let el = header.parentElement;
+            for (let i = 0; i < 10; i++) {
+                if (!el) break;
+                const rect = el.getBoundingClientRect();
+                // Yeterince geniş ve uzun bir eleman bulduk
+                if (rect.width > 200 && rect.height > 300) {
                     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
                 }
-                // Tablo bulunamazsa header konumundan tahmin et
-                const rect = header.getBoundingClientRect();
-                return { x: rect.x - 5, y: rect.y - 5, width: 420, height: 700 };
+                el = el.parentElement;
             }
-            return null;
+            // Bulamazsa header'dan tahmin et
+            const rect = header.getBoundingClientRect();
+            return { x: rect.x - 10, y: rect.y - 30, width: 450, height: 750 };
         });
 
         let clipArea;
-        if (tableRect && tableRect.width > 50) {
-            // Tabloyu tam kırp, biraz padding ekle
+        if (tableRect) {
             clipArea = {
-                x: Math.max(0, tableRect.x - 10),
-                y: Math.max(0, tableRect.y - 10),
-                width: Math.min(tableRect.width + 20, 1920),
-                height: Math.min(tableRect.height + 20, 1080)
+                x: Math.max(0, Math.floor(tableRect.x) - 5),
+                y: Math.max(0, Math.floor(tableRect.y) - 5),
+                width: Math.min(Math.ceil(tableRect.width) + 10, 600),
+                height: Math.min(Math.ceil(tableRect.height) + 10, 1080)
             };
-            console.log(`Tablo otomatik bulundu: ${JSON.stringify(clipArea)}`);
+            console.log(`Tablo bulundu: ${JSON.stringify(clipArea)}`);
         } else {
-            // Fallback: sabit değerler
-            clipArea = { x: 60, y: 60, width: 480, height: 980 };
-            console.log("Tablo bulunamadı, fallback kullanılıyor.");
+            // Fallback: sağ üst köşe (TradingView'da tablo genelde burada)
+            clipArea = { x: 1400, y: 60, width: 520, height: 980 };
+            console.log("Fallback clip kullanılıyor.");
         }
 
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Ekran görüntüsü alındı.");
 
-        console.log("OCR başlıyor...");
+        // OCR
         const result = await Tesseract.recognize('tablo.png', 'tur+eng');
         const lines = result.data.text.split('\n');
         
