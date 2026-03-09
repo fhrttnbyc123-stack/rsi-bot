@@ -68,7 +68,7 @@ async function run() {
         await new Promise(r => setTimeout(r, 2000));
 
         // Görüntüden ölçülen koordinatlar (1456x816 pencere)
-        const clipArea = { x: 958, y: 40, width: 165, height: 388 };
+        const clipArea = { x: 968, y: 40, width: 185, height: 388 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Screenshot alındı.");
 
