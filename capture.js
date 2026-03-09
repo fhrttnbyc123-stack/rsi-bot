@@ -21,7 +21,7 @@ async function run() {
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1456,816']
     });
 
     const context = await browser.createIncognitoBrowserContext();
@@ -33,7 +33,7 @@ async function run() {
         { name: 'sessionid_sign', value: process.env.SESSION_SIGN, domain: '.tradingview.com' }
     ];
     await page.setCookie(...cookies);
-    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setViewport({ width: 1456, height: 816 });
 
     try {
         console.log("Grafiğe giriliyor...");
@@ -53,21 +53,22 @@ async function run() {
         });
         
         await new Promise(r => setTimeout(r, 2000)); 
-        await page.mouse.click(500, 500); 
+        await page.mouse.click(500, 400); 
         await page.keyboard.press('Space');
         await new Promise(r => setTimeout(r, 60000)); 
 
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
+        await new Promise(r => setTimeout(r, 2000));
 
-        // ZOOM YOK
+        // Fareyi tabloya götür
         await page.mouse.move(1000, 150, { steps: 10 });
         await page.mouse.click(1000, 150);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Tablo: x=950, y=40, width=175, height=290 (tam ekran görüntüsünden ölçüldü)
-        const clipArea = { x: 948, y: 38, width: 178, height: 295 };
+        // Görüntüden ölçülen koordinatlar (1456x816 pencere)
+        const clipArea = { x: 950, y: 40, width: 175, height: 282 };
         await page.screenshot({ path: 'tablo.png', clip: clipArea });
         console.log("Screenshot alındı.");
 
