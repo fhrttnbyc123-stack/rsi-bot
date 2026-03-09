@@ -58,10 +58,15 @@ async function run() {
         await page.addStyleTag({ 
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
-        await page.evaluate(() => { document.body.style.zoom = "185%"; });
-        await new Promise(r => setTimeout(r, 5000));
 
-        // SEMBOL'ün tam koordinatını bul ve logla
+        // ZOOM YOK — tablo ekranda olsun
+
+        // Fareyi sağ üste götür, tabloyu opaklaştır
+        await page.mouse.move(1400, 200, { steps: 10 });
+        await page.mouse.click(1400, 200);
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Koordinatı bul
         const coords = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('td, th, div, span'));
             const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
@@ -72,22 +77,14 @@ async function run() {
             return null;
         });
 
-        console.log(`=== SEMBOL ELEMANI KOORDINATI: ${JSON.stringify(coords)} ===`);
+        console.log(`=== SEMBOL KOORDINATI: ${JSON.stringify(coords)} ===`);
 
-        // Fareyi tabloya götür
-        if (coords) {
-            await page.mouse.move(coords.x + 30, coords.y + 30, { steps: 10 });
-            await page.mouse.click(coords.x + 30, coords.y + 30);
-        }
-        await new Promise(r => setTimeout(r, 2000));
-
-        // TAM EKRAN al — koordinatı öğrenmek için
+        // Tam ekran al
         await page.screenshot({ path: 'tablo.png' });
-        console.log("Tam ekran alındı.");
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
         await bot.sendPhoto(chatId, 'tablo.png', { 
-            caption: `Koordinat tespiti (${timestampText})\nSEMBOL koordinati: ${JSON.stringify(coords)}` 
+            caption: `Koordinat tespiti (${timestampText})\nSEMBOL: ${JSON.stringify(coords)}` 
         });
 
     } catch (err) {
