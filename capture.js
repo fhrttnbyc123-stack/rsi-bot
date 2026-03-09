@@ -1,6 +1,5 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const Tesseract = require('tesseract.js');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -57,64 +56,45 @@ async function run() {
         await page.keyboard.press('Space');
         await new Promise(r => setTimeout(r, 60000)); 
 
-        await page.addStyleTag({ 
-            content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
+        // Tabloyu DOM'dan oku
+        console.log("Tablo DOM'dan okunuyor...");
+        const tableData = await page.evaluate(() => {
+            // Tüm satırları bul
+            const rows = [];
+            const allCells = document.querySelectorAll('tr');
+            
+            for (let row of allCells) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 3) {
+                    const sembol = cells[0]?.innerText?.trim();
+                    const rsi    = cells[1]?.innerText?.trim();
+                    const sinyal = cells[2]?.innerText?.trim();
+                    if (sembol && sinyal && sembol !== 'SEMBOL') {
+                        rows.push({ sembol, rsi, sinyal });
+                    }
+                }
+            }
+            return rows;
         });
-        await new Promise(r => setTimeout(r, 2000));
 
-        // Fareyi tabloya götür
-        await page.mouse.move(1000, 150, { steps: 10 });
-        await page.mouse.click(1000, 150);
-        await new Promise(r => setTimeout(r, 2000));
+        console.log(`${tableData.length} satır okundu.`);
+        console.log(JSON.stringify(tableData));
 
-        // Görüntüden ölçülen koordinatlar (1456x816 pencere)
-        const clipArea = { x: 968, y: 40, width: 185, height: 388 };
-        await page.screenshot({ path: 'tablo.png', clip: clipArea });
-        console.log("Screenshot alındı.");
-
-        const result = await Tesseract.recognize('tablo.png', 'tur+eng');
-        const lines = result.data.text.split('\n');
-        
-        let currentSnapshot = {}; 
-        let fullReportList = [];  
-        
-        for (let line of lines) {
-            if (!line || line.trim().length < 5) continue;
-            let lowerLine = line.toLowerCase();
-            let words = line.trim().split(/\s+/);
-            let symbol = words[0]; 
-            if (symbol.includes('.') || symbol.length < 2) {
-                if (words.length > 1) symbol = words[1];
-            }
-            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
-            let safeSymbol = symbol.replace(/_/g, '\\_'); 
-            let rawSymbol = symbol.replace(/\\/g, ''); 
-            let status = "NÖTR";
-            let emoji = "";
-            if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
-                status = "ALIŞ"; emoji = "🟢";
-            } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
-                status = "SATIŞ"; emoji = "🔴";
-            } else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
-                status = "TETİK"; emoji = "🟠";
-            } else if (lowerLine.includes("dikkat")) {
-                status = "DİKKAT"; emoji = "🟡";
-            } else if (lowerLine.includes("bolge") || lowerLine.includes("alim")) {
-                status = "ALIM_BOLGESI"; emoji = "🔵";
-            } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
-                status = "ZİRVE"; emoji = "🟣";
-            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
-                status = "DİPTE"; emoji = "⚪";
-            }
-            if (status !== "NÖTR") {
-                currentSnapshot[rawSymbol] = status;
-                fullReportList.push(`${emoji} ${safeSymbol}: ${status}`);
-            }
+        // Sinyal emojileri
+        function getEmoji(sinyal) {
+            const s = sinyal.toUpperCase();
+            if (s.includes('AL FIRSATI'))           return '🟢';
+            if (s.includes('KAR AL'))               return '🔴';
+            if (s.includes('TETIK') || s.includes('TETİK')) return '🟠';
+            if (s.includes('ZİRVE') || s.includes('ZIRVE')) return '🟣';
+            if (s.includes('ALIM BÖLGESİ') || s.includes('ALIM BOLGE')) return '🔵';
+            if (s.includes('DİPTE') || s.includes('DIPTE')) return '⚪';
+            if (s.includes('DİKKAT') || s.includes('DIKKAT')) return '🟡';
+            if (s.includes('AŞIRI') || s.includes('ASIRI')) return '🔵';
+            return '⬛';
         }
 
-        fullReportList.sort();
-        const fullReportText = fullReportList.join('\n');
-
+        // Önceki durumu yükle
         let lastSnapshot = {};
         if (fs.existsSync('state.json')) {
             try {
@@ -123,24 +103,42 @@ async function run() {
             } catch (e) { console.log("Hafıza tazelendi."); }
         }
 
-        let notificationLines = [];
-        for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
-            let previousStatus = lastSnapshot[sym] || "NÖTR"; 
-            if (currentStatus !== previousStatus) {
-                if (currentStatus === "ALIŞ") notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: AL FIRSATI GELDİ!`);
-                else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR ALMA VAKTİ!`);
+        // Mevcut durumu kaydet
+        let currentSnapshot = {};
+        for (let row of tableData) {
+            if (row.sembol && row.sinyal) {
+                currentSnapshot[row.sembol] = row.sinyal;
             }
         }
+
+        // Değişimleri bul
+        let notificationLines = [];
+        for (let [sembol, currentSinyal] of Object.entries(currentSnapshot)) {
+            const prevSinyal = lastSnapshot[sembol] || 'NÖTR';
+            if (currentSinyal !== prevSinyal) {
+                if (currentSinyal.includes('AL FIRSATI')) {
+                    notificationLines.push(`🟢 ${sembol}: AL FIRSATI GELDİ! (RSI: ${tableData.find(r=>r.sembol===sembol)?.rsi})`);
+                } else if (currentSinyal.includes('KAR AL')) {
+                    notificationLines.push(`🔴 ${sembol}: KAR ALMA VAKTİ! (RSI: ${tableData.find(r=>r.sembol===sembol)?.rsi})`);
+                }
+            }
+        }
+
+        // Tam rapor
+        const fullReportLines = tableData.map(row => 
+            `${getEmoji(row.sinyal)} ${row.sembol}: ${row.sinyal} (RSI: ${row.rsi})`
+        );
+        const fullReportText = fullReportLines.join('\n');
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
 
         if (notificationLines.length > 0) {
-            let message = `AL/SAT SİNYALİ (${timestampText})\n\n` + notificationLines.join('\n');
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: message });
+            const message = `AL/SAT SİNYALİ (${timestampText})\n\n` + notificationLines.join('\n');
+            await bot.sendMessage(chatId, message);
         } else if (isManualRun || isDailyReportTime) {
             const baslik = isManualRun ? "Manuel Kontrol" : "Gunluk 18.00 Ozeti";
-            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
-            await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}` });
+            const message = `${baslik} (${timestampText})\n\n${fullReportText || 'Veri okunamadi.'}`;
+            await bot.sendMessage(chatId, message);
         } else {
             console.log("Sessiz mod.");
         }
