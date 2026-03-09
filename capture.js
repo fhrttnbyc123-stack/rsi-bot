@@ -16,6 +16,8 @@ async function run() {
     const chartUrl = `https://tr.tradingview.com/chart/${chartId}/?t=${Date.now()}&nosync=true`; 
     
     const isManualRun = (eventName === 'workflow_dispatch');
+    const trHour = (new Date().getUTCHours() + 3) % 24;
+    const isDailyReportTime = (trHour === 18);
 
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/google-chrome',
@@ -59,33 +61,90 @@ async function run() {
             content: `[class*="layout__area--right"], [class*="widgetbar"], .tv-floating-toolbar { display: none !important; }`
         });
 
-        // ZOOM YOK — tablo ekranda olsun
-
-        // Fareyi sağ üste götür, tabloyu opaklaştır
-        await page.mouse.move(1400, 200, { steps: 10 });
-        await page.mouse.click(1400, 200);
+        // ZOOM YOK
+        await page.mouse.move(1000, 150, { steps: 10 });
+        await page.mouse.click(1000, 150);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Koordinatı bul
-        const coords = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('td, th, div, span'));
-            const target = elements.find(el => el.innerText && el.innerText.trim() === 'SEMBOL');
-            if (target) {
-                const rect = target.getBoundingClientRect();
-                return { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) };
+        // Tablo: x=950, y=40, width=175, height=290 (tam ekran görüntüsünden ölçüldü)
+        const clipArea = { x: 948, y: 38, width: 178, height: 295 };
+        await page.screenshot({ path: 'tablo.png', clip: clipArea });
+        console.log("Screenshot alındı.");
+
+        const result = await Tesseract.recognize('tablo.png', 'tur+eng');
+        const lines = result.data.text.split('\n');
+        
+        let currentSnapshot = {}; 
+        let fullReportList = [];  
+        
+        for (let line of lines) {
+            if (!line || line.trim().length < 5) continue;
+            let lowerLine = line.toLowerCase();
+            let words = line.trim().split(/\s+/);
+            let symbol = words[0]; 
+            if (symbol.includes('.') || symbol.length < 2) {
+                if (words.length > 1) symbol = words[1];
             }
-            return null;
-        });
+            if (symbol.includes("bolge") || symbol.includes("alim") || symbol.length > 15) continue;
+            let safeSymbol = symbol.replace(/_/g, '\\_'); 
+            let rawSymbol = symbol.replace(/\\/g, ''); 
+            let status = "NÖTR";
+            let emoji = "";
+            if (lowerLine.includes("al") && (lowerLine.includes("firsat") || lowerLine.includes("fırsat"))) {
+                status = "ALIŞ"; emoji = "🟢";
+            } else if (lowerLine.includes("kar") && lowerLine.includes("al")) {
+                status = "SATIŞ"; emoji = "🔴";
+            } else if (lowerLine.includes("tetik") || lowerLine.includes("hazir")) {
+                status = "TETİK"; emoji = "🟠";
+            } else if (lowerLine.includes("dikkat")) {
+                status = "DİKKAT"; emoji = "🟡";
+            } else if (lowerLine.includes("bolge") || lowerLine.includes("alim")) {
+                status = "ALIM_BOLGESI"; emoji = "🔵";
+            } else if (lowerLine.includes("zirve") || lowerLine.includes("guclu")) {
+                status = "ZİRVE"; emoji = "🟣";
+            } else if (lowerLine.includes("dipte") || lowerLine.includes("bekle")) {
+                status = "DİPTE"; emoji = "⚪";
+            }
+            if (status !== "NÖTR") {
+                currentSnapshot[rawSymbol] = status;
+                fullReportList.push(`${emoji} ${safeSymbol}: ${status}`);
+            }
+        }
 
-        console.log(`=== SEMBOL KOORDINATI: ${JSON.stringify(coords)} ===`);
+        fullReportList.sort();
+        const fullReportText = fullReportList.join('\n');
 
-        // Tam ekran al
-        await page.screenshot({ path: 'tablo.png' });
+        let lastSnapshot = {};
+        if (fs.existsSync('state.json')) {
+            try {
+                let content = JSON.parse(fs.readFileSync('state.json'));
+                if (content.snapshot) lastSnapshot = content.snapshot;
+            } catch (e) { console.log("Hafıza tazelendi."); }
+        }
+
+        let notificationLines = [];
+        for (let [sym, currentStatus] of Object.entries(currentSnapshot)) {
+            let previousStatus = lastSnapshot[sym] || "NÖTR"; 
+            if (currentStatus !== previousStatus) {
+                if (currentStatus === "ALIŞ") notificationLines.push(`🟢 ${sym.replace(/_/g, '\\_')}: AL FIRSATI GELDİ!`);
+                else if (currentStatus === "SATIŞ") notificationLines.push(`🔴 ${sym.replace(/_/g, '\\_')}: KAR ALMA VAKTİ!`);
+            }
+        }
 
         const timestampText = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-        await bot.sendPhoto(chatId, 'tablo.png', { 
-            caption: `Koordinat tespiti (${timestampText})\nSEMBOL: ${JSON.stringify(coords)}` 
-        });
+
+        if (notificationLines.length > 0) {
+            let message = `AL/SAT SİNYALİ (${timestampText})\n\n` + notificationLines.join('\n');
+            await bot.sendPhoto(chatId, 'tablo.png', { caption: message });
+        } else if (isManualRun || isDailyReportTime) {
+            const baslik = isManualRun ? "Manuel Kontrol" : "Gunluk 18.00 Ozeti";
+            const durumMetni = fullReportText ? fullReportText : "Listede aktif sinyal yok.";
+            await bot.sendPhoto(chatId, 'tablo.png', { caption: `${baslik} (${timestampText})\n\n${durumMetni}` });
+        } else {
+            console.log("Sessiz mod.");
+        }
+
+        fs.writeFileSync('state.json', JSON.stringify({ snapshot: currentSnapshot }));
 
     } catch (err) {
         console.error("Hata:", err.message);
