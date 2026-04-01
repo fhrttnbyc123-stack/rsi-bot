@@ -1,5 +1,0 @@
-pyTelegramBotAPI
-yfinance
-tradingview_ta
-pandas
-pytz
