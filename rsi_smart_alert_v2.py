@@ -24,7 +24,7 @@ CACHE_FILE = "signal_cache.json"
 SYMBOLS = [
     # Commodities
     {"sym": "XAUUSD",  "tv_exch": "OANDA",   "tv_scr": "cfd",      "yf": "XAUUSD=X",    "label": "Altın"},
-    {"sym": "XAGUSD",  "tv_exch": "OANDA",   "tv_scr": "cfd",      "yf": "XAGUSD=X",    "label": "Gümüş"},
+    {"sym": "XAGUSD",  "tv_exch": "OANDA",   "tv_scr": "cfd",      "yf": "SI=F",    "label": "Gümüş"},
     {"sym": "UKOIL",   "tv_exch": "TVC",     "tv_scr": "cfd",      "yf": "BZ=F",         "label": "Brent Petrol"},
     # Crypto
     {"sym": "BTCUSD",  "tv_exch": "BINANCE", "tv_scr": "crypto",   "yf": "BTC-USD",      "label": "Bitcoin"},
