@@ -19,9 +19,10 @@ async function run() {
     const trHour = (new Date().getUTCHours() + 3) % 24;
     const isDailyReportTime = (trHour === 18);
 
+    const chromePath = process.env.CHROME_PATH || '/usr/bin/google-chrome';
     const browser = await puppeteer.launch({
-        executablePath: '/usr/bin/google-chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--window-size=1920,1080']
+    executablePath: chromePath,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-cache', '--disable-gpu', '--window-size=1920,1080']
     });
 
     const context = await browser.createIncognitoBrowserContext();
